@@ -4,17 +4,9 @@ A 3D character / farm / build game — play in the browser on laptop or phone.
 
 ## Play online
 
-After GitHub Pages is enabled, open:
+**https://6tbwmzr522-crypto.github.io/dream-world/**
 
-**https://\<your-username\>.github.io/dream-world/**
-
-## Play locally
-
-```bash
-python3 -m http.server 8765
-```
-
-Then visit http://localhost:8765 (or your laptop’s IP on the same Wi‑Fi).
+Repo: https://github.com/6tbwmzr522-crypto/dream-world
 
 ## Phone controls
 
