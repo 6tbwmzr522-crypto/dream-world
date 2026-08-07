@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>Dream World</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            overflow: hidden;
+            background: #1a2332;
+            font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+            touch-action: none;
+            user-select: none;
+        }
+        #game-container { width: 100vw; height: 100vh; position: relative; }
+        #canvas-container { width: 100%; height: 100%; position: absolute; inset: 0; }
+        .screen {
+            position: absolute; inset: 0; display: none;
+            flex-direction: column; align-items: center; justify-content: center;
+            z-index: 50; gap: 16px; padding: 24px;
+        }
+        .screen.active { display: flex; }
+        #login-screen {
+            background:
+                radial-gradient(ellipse at 20% 20%, rgba(255, 200, 120, 0.35), transparent 45%),
+                radial-gradient(ellipse at 80% 80%, rgba(120, 200, 255, 0.3), transparent 45%),
+                linear-gradient(160deg, #2d5a3d 0%, #5a8f6a 40%, #87b8c9 100%);
+            z-index: 120;
+        }
+        #main-menu {
+            background:
+                linear-gradient(180deg, #7ec8e3 0%, #b8e0a8 55%, #8fbc6a 100%);
+            z-index: 100;
+        }
+        #world-select {
+            background: linear-gradient(180deg, #dff3ff 0%, #c8e6c0 100%);
+            z-index: 110; justify-content: flex-start; overflow-y: auto;
+        }
+        #char-creator {
+            background: linear-gradient(180deg, #87CEEB 0%, #E0F6FF 100%);
+            z-index: 90; align-items: stretch; justify-content: stretch; padding: 0; gap: 0;
+        }
+        #shop-menu {
+            background: linear-gradient(180deg, #fff8e7 0%, #f0e6d2 100%);
+            z-index: 95; justify-content: flex-start; overflow-y: auto; align-items: stretch;
+        }
+        #inventory-panel {
+            position: absolute; right: 20px; top: 80px; width: 280px;
+            background: rgba(20, 28, 40, 0.92); color: #fff; border-radius: 18px;
+            padding: 16px; z-index: 40; display: none; pointer-events: all;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+        }
+        #inventory-panel.open { display: block; }
+        .inv-title { font-size: 18px; font-weight: bold; margin-bottom: 12px; }
+        .inv-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        .inv-slot {
+            background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.2);
+            border-radius: 12px; padding: 10px 6px; text-align: center; cursor: pointer;
+            font-size: 12px; min-height: 72px; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; gap: 4px;
+        }
+        .inv-slot.selected { border-color: #ffd700; background: rgba(255, 215, 0, 0.2); }
+        .inv-slot .inv-icon { font-size: 22px; }
+        .game-title {
+            font-size: clamp(40px, 8vw, 72px); font-weight: 900; color: #fff;
+            text-shadow: 3px 3px 0 #2d6a4f, 6px 6px 0 rgba(0,0,0,0.15);
+            letter-spacing: 2px; margin-bottom: 8px;
+        }
+        .subtitle { color: rgba(255,255,255,0.9); font-size: 18px; margin-bottom: 12px; }
+        .login-card, .menu-card {
+            background: rgba(255,255,255,0.92); border-radius: 24px; padding: 28px 32px;
+            width: min(420px, 92vw); box-shadow: 0 16px 40px rgba(0,0,0,0.18);
+            display: flex; flex-direction: column; gap: 14px;
+        }
+        .login-card label { font-weight: bold; color: #334; font-size: 14px; }
+        .login-card input {
+            padding: 14px 16px; border-radius: 14px; border: 2px solid #cdd;
+            font-size: 18px; outline: none;
+        }
+        .login-card input:focus { border-color: #4a9; }
+        .btn {
+            padding: 14px 28px; font-size: 18px; font-weight: bold; border: none;
+            border-radius: 999px; cursor: pointer; transition: transform 0.12s, box-shadow 0.12s;
+            letter-spacing: 1px; text-align: center;
+        }
+        .btn:active { transform: translateY(3px); }
+        .btn-primary {
+            background: linear-gradient(135deg, #ff7a59, #ff9f43); color: #fff;
+            box-shadow: 0 6px 0 #c94e34;
+        }
+        .btn-primary:active { box-shadow: 0 2px 0 #c94e34; }
+        .btn-teal {
+            background: linear-gradient(135deg, #2ec4b6, #20a090); color: #fff;
+            box-shadow: 0 6px 0 #178072;
+        }
+        .btn-teal:active { box-shadow: 0 2px 0 #178072; }
+        .btn-gold {
+            background: linear-gradient(135deg, #ffd166, #f4a261); color: #333;
+            box-shadow: 0 6px 0 #d0893a;
+        }
+        .btn-gold:active { box-shadow: 0 2px 0 #d0893a; }
+        .btn-ghost {
+            background: rgba(255,255,255,0.85); color: #333; box-shadow: 0 4px 0 #bbb;
+        }
+        .menu-stack { display: flex; flex-direction: column; gap: 12px; width: min(320px, 90vw); }
+        .menu-stack .btn { width: 100%; }
+        .screen-header {
+            width: 100%; max-width: 1100px; display: flex; justify-content: space-between;
+            align-items: center; padding: 8px 4px 4px; flex-shrink: 0;
+        }
+        .screen-header h1 { color: #234; font-size: clamp(24px, 4vw, 36px); }
+        .world-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px; width: 100%; max-width: 980px; padding-bottom: 40px;
+        }
+        .world-card {
+            background: #fff; border-radius: 20px; padding: 20px 16px; text-align: center;
+            cursor: pointer; box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+            border: 3px solid transparent; transition: transform 0.15s, border-color 0.15s;
+        }
+        .world-card:hover { transform: translateY(-4px); border-color: #2ec4b6; }
+        .world-emoji { font-size: 42px; margin-bottom: 8px; }
+        .world-name { font-size: 18px; font-weight: bold; color: #234; }
+        .world-desc { font-size: 13px; color: #678; margin-top: 6px; }
+        .creator-header, .shop-header {
+            padding: 14px 24px; background: rgba(0,0,0,0.25); display: flex;
+            justify-content: space-between; align-items: center; width: 100%;
+            position: sticky; top: 0; z-index: 2;
+        }
+        .creator-header h1, .shop-header h1 { color: #fff; font-size: 28px; text-shadow: 1px 1px 3px rgba(0,0,0,0.3); }
+        .creator-body { display: flex; flex: 1; overflow: hidden; width: 100%; }
+        .creator-preview { flex: 1; min-height: 240px; }
+        .creator-panel {
+            width: min(360px, 42vw); background: rgba(255,255,255,0.96); padding: 18px;
+            overflow-y: auto; box-shadow: -6px 0 24px rgba(0,0,0,0.08);
+        }
+        .panel-section { margin-bottom: 18px; }
+        .panel-label { font-size: 15px; font-weight: bold; color: #333; margin-bottom: 8px; display: block; }
+        .age-buttons, .color-picker { display: flex; flex-wrap: wrap; gap: 8px; }
+        .age-btn {
+            padding: 8px 14px; border: 2px solid #ddd; background: #fff; border-radius: 999px;
+            cursor: pointer; font-size: 13px; font-weight: bold;
+        }
+        .age-btn.active { background: #2ec4b6; color: #fff; border-color: #2ec4b6; }
+        .color-swatch {
+            width: 34px; height: 34px; border-radius: 50%; border: 3px solid transparent; cursor: pointer;
+        }
+        .color-swatch.active { border-color: #222; transform: scale(1.12); }
+        .char-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+        .char-slot {
+            aspect-ratio: 1; background: #f0f0f0; border: 3px solid #ddd; border-radius: 12px;
+            display: flex; align-items: center; justify-content: center; cursor: pointer;
+            font-size: 22px; position: relative;
+        }
+        .char-slot.selected { border-color: #ff7a59; background: #fff0f0; }
+        .char-slot .slot-num { position: absolute; top: 3px; left: 5px; font-size: 10px; color: #999; }
+        .gift-banner {
+            text-align: center; padding: 28px 20px 10px; position: relative;
+        }
+        .gift-sign {
+            display: inline-block; font-size: clamp(28px, 6vw, 48px); font-weight: 900;
+            color: #fff; background: linear-gradient(135deg, #e76f51, #f4a261);
+            padding: 14px 36px; border-radius: 18px; letter-spacing: 3px;
+            box-shadow: 0 8px 0 #b84a32, 0 0 0 0 rgba(220,40,40,0);
+            transition: box-shadow 0.3s, transform 0.3s;
+        }
+        .gift-sign.new-gift {
+            animation: giftPulse 1.4s infinite;
+            box-shadow: 0 8px 0 #b84a32, 0 0 28px 8px rgba(255, 40, 40, 0.75);
+            background: linear-gradient(135deg, #ff2d2d, #ff6b35);
+        }
+        @keyframes giftPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.04); }
+        }
+        .gift-status {
+            margin-top: 12px; font-weight: bold; color: #555; font-size: 15px;
+        }
+        .shop-tabs { display: flex; gap: 10px; justify-content: center; padding: 10px; flex-wrap: wrap; }
+        .shop-tab {
+            padding: 10px 18px; border-radius: 999px; border: 2px solid #ccc; background: #fff;
+            font-weight: bold; cursor: pointer;
+        }
+        .shop-tab.active { background: #2ec4b6; color: #fff; border-color: #2ec4b6; }
+        .shop-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 14px; padding: 20px 28px 40px; width: 100%; max-width: 1100px; margin: 0 auto;
+        }
+        .shop-item {
+            background: #fff; border-radius: 16px; padding: 16px; text-align: center;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.1); cursor: pointer; border: 2px solid transparent;
+        }
+        .shop-item:hover { border-color: #2ec4b6; transform: translateY(-3px); }
+        .shop-item.owned { border-color: #90be6d; background: #f1faee; }
+        .shop-icon { font-size: 34px; margin-bottom: 8px; }
+        .shop-name { font-size: 14px; font-weight: bold; color: #333; }
+        .shop-meta { font-size: 12px; color: #777; margin-top: 4px; }
+        .world-tags { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; margin-top: 8px; }
+        .world-tag {
+            font-size: 10px; background: #e8f5e9; color: #2e7d32; padding: 2px 8px;
+            border-radius: 999px; font-weight: bold;
+        }
+        #world-pick-modal {
+            display: none; position: fixed; inset: 0; z-index: 150;
+            background: rgba(0,0,0,0.45); align-items: center; justify-content: center; padding: 20px;
+        }
+        #world-pick-modal.open { display: flex; }
+        .world-pick-card {
+            background: #fff; border-radius: 22px; padding: 24px; width: min(420px, 94vw);
+            box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+        }
+        .world-pick-card h2 { font-size: 22px; margin-bottom: 6px; color: #234; }
+        .world-pick-card p { font-size: 14px; color: #678; margin-bottom: 14px; }
+        .world-pick-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+        .world-pick-btn {
+            padding: 12px 14px; border-radius: 14px; border: 2px solid #dde; background: #fafafa;
+            font-weight: bold; font-size: 15px; cursor: pointer; text-align: left;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .world-pick-btn:hover { border-color: #2ec4b6; background: #e8fffb; }
+        .world-pick-btn.in-world { border-color: #90be6d; background: #f1faee; }
+        .world-pick-actions { display: flex; gap: 8px; }
+        .world-pick-actions .btn { flex: 1; font-size: 15px; padding: 12px; }
+        #game-ui {
+            position: absolute; inset: 0; pointer-events: none; z-index: 10; display: none;
+        }
+        #game-ui.active { display: block; }
+        .game-hud {
+            position: absolute; top: 14px; left: 14px; color: #fff;
+            text-shadow: 2px 2px 0 #000; font-size: 18px; font-weight: bold; pointer-events: all;
+        }
+        .mode-indicator {
+            position: absolute; top: 14px; right: 14px; padding: 8px 18px;
+            background: rgba(0,0,0,0.55); color: #fff; border-radius: 999px; font-size: 13px; font-weight: bold;
+        }
+        .controls-hint {
+            position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+            color: #fff; text-shadow: 1px 1px 2px #000; font-size: 12px; text-align: center;
+            background: rgba(0,0,0,0.45); padding: 10px 16px; border-radius: 14px; max-width: 92vw;
+        }
+        .build-menu {
+            position: absolute; bottom: 78px; left: 50%; transform: translateX(-50%);
+            display: none; flex-wrap: wrap; gap: 8px; background: rgba(0,0,0,0.72);
+            padding: 12px; border-radius: 18px; pointer-events: all; max-width: 92vw; justify-content: center;
+        }
+        .build-menu.open { display: flex; }
+        .build-item {
+            width: 58px; height: 58px; background: rgba(255,255,255,0.92); border: 3px solid transparent;
+            border-radius: 12px; display: flex; flex-direction: column; align-items: center;
+            justify-content: center; cursor: pointer; font-size: 10px; font-weight: bold; color: #333;
+        }
+        .build-item.selected { border-color: #ffd700; background: #fffbea; }
+        .build-item .item-icon { font-size: 18px; }
+        .hud-actions {
+            position: absolute; bottom: 18px; right: 18px; display: flex; flex-direction: column;
+            gap: 8px; pointer-events: all;
+        }
+        .hud-btn {
+            padding: 11px 16px; border: none; border-radius: 999px; font-weight: bold;
+            cursor: pointer; color: #fff; box-shadow: 0 4px 0 rgba(0,0,0,0.25); font-size: 13px;
+        }
+        .hud-btn.build { background: linear-gradient(135deg, #9b59b6, #8e44ad); }
+        .hud-btn.inv { background: linear-gradient(135deg, #3498db, #2980b9); }
+        .hud-btn.menu { background: linear-gradient(135deg, #e74c3c, #c0392b); }
+        .toast {
+            position: absolute; top: 70px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.8); color: #fff; padding: 10px 18px; border-radius: 12px;
+            font-weight: bold; z-index: 60; display: none; pointer-events: none;
+        }
+        .toast.show { display: block; }
+        #loading {
+            position: absolute; inset: 0; background: #1a2332; display: flex;
+            align-items: center; justify-content: center; color: #fff; font-size: 24px; z-index: 200;
+        }
+        .welcome-name { color: #234; font-weight: bold; font-size: 16px; margin-bottom: 4px; }
+
+        /* Mobile touch controls */
+        #touch-controls {
+            display: none; position: absolute; inset: 0; pointer-events: none; z-index: 25;
+        }
+        #touch-controls.active { display: block; }
+        .joystick-zone {
+            position: absolute; left: 16px; bottom: 24px; width: 130px; height: 130px;
+            pointer-events: all; touch-action: none;
+        }
+        .joystick-base {
+            width: 100%; height: 100%; border-radius: 50%;
+            background: rgba(255,255,255,0.18); border: 3px solid rgba(255,255,255,0.45);
+            position: relative;
+        }
+        .joystick-knob {
+            width: 54px; height: 54px; border-radius: 50%;
+            background: rgba(255,255,255,0.85); position: absolute;
+            left: 50%; top: 50%; transform: translate(-50%, -50%);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        .touch-actions {
+            position: absolute; right: 16px; bottom: 110px; display: flex; flex-direction: column;
+            gap: 10px; pointer-events: all; align-items: flex-end;
+        }
+        .touch-btn {
+            width: 64px; height: 64px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.5);
+            background: rgba(0,0,0,0.45); color: #fff; font-weight: bold; font-size: 13px;
+            pointer-events: all; touch-action: manipulation; box-shadow: 0 4px 0 rgba(0,0,0,0.3);
+        }
+        .touch-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 rgba(0,0,0,0.3); }
+        .touch-btn.jump { background: rgba(46, 196, 182, 0.85); }
+        .touch-btn.interact { background: rgba(255, 152, 0, 0.9); width: 72px; height: 72px; font-size: 14px; }
+        .touch-btn.run { background: rgba(52, 152, 219, 0.85); }
+        .touch-btn.remove { background: rgba(231, 76, 60, 0.85); display: none; }
+        .touch-btn.remove.show { display: block; }
+        .look-hint {
+            position: absolute; top: 58px; left: 50%; transform: translateX(-50%);
+            color: rgba(255,255,255,0.85); font-size: 12px; text-shadow: 1px 1px 2px #000;
+            background: rgba(0,0,0,0.35); padding: 6px 12px; border-radius: 10px;
+            pointer-events: none;
+        }
+        @media (max-width: 900px), (pointer: coarse) {
+            .controls-hint { display: none; }
+            .hud-actions { bottom: auto; top: 70px; right: 12px; }
+            .hud-btn { font-size: 12px; padding: 9px 12px; }
+            .build-menu { bottom: 210px; max-height: 28vh; overflow-y: auto; }
+            .game-title { font-size: 42px; }
+            .creator-body { flex-direction: column; }
+            .creator-panel { width: 100%; max-height: 45vh; }
+            .menu-btn, .btn { min-height: 48px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="loading">Loading Dream World...</div>
+        <div id="canvas-container"></div>
+
+        <div id="login-screen" class="screen active">
+            <div class="game-title">Dream World</div>
+            <div class="subtitle">Welcome, adventurer!</div>
+            <div class="login-card">
+                <label for="player-name">Choose your player name</label>
+                <input id="player-name" type="text" maxlength="20" placeholder="Your name" autocomplete="off">
+                <button class="btn btn-primary" id="btn-login">Enter Dream World</button>
+                <p style="font-size:12px;color:#778;text-align:center;">Tip: this saves on this computer so you can come back later.</p>
+            </div>
+        </div>
+
+        <div id="main-menu" class="screen">
+            <div class="game-title">Dream World</div>
+            <div class="welcome-name" id="welcome-name"></div>
+            <div class="menu-stack">
+                <button class="btn btn-primary" id="btn-play">Play</button>
+                <button class="btn btn-teal" id="btn-char">Character Creator</button>
+                <button class="btn btn-gold" id="btn-shop">Shopping</button>
+                <button class="btn btn-ghost" id="btn-logout">Switch Player</button>
+            </div>
+        </div>
+
+        <div id="world-select" class="screen">
+            <div class="screen-header">
+                <h1>Choose a World</h1>
+                <button class="btn btn-ghost" id="btn-world-back">Back</button>
+            </div>
+            <div class="world-grid" id="world-grid"></div>
+        </div>
+
+        <div id="char-creator" class="screen">
+            <div class="creator-header">
+                <h1>Character Creator</h1>
+                <button class="btn btn-ghost" id="btn-char-back">Back</button>
+            </div>
+            <div class="creator-body">
+                <div class="creator-preview" id="creator-preview"></div>
+                <div class="creator-panel">
+                    <div class="panel-section">
+                        <label class="panel-label">Choose Character Slot</label>
+                        <div class="char-grid" id="char-grid"></div>
+                    </div>
+                    <div class="panel-section">
+                        <label class="panel-label">Age</label>
+                        <div class="age-buttons" id="age-buttons">
+                            <button class="age-btn" data-age="newborn">Newborn</button>
+                            <button class="age-btn" data-age="baby">Baby</button>
+                            <button class="age-btn" data-age="child">Child</button>
+                            <button class="age-btn active" data-age="preteen">Preteen</button>
+                            <button class="age-btn" data-age="teenager">Teenager</button>
+                            <button class="age-btn" data-age="adult">Adult</button>
+                            <button class="age-btn" data-age="old">Old</button>
+                        </div>
+                    </div>
+                    <div class="panel-section">
+                        <label class="panel-label">Skin Color</label>
+                        <div class="color-picker" id="skin-colors"></div>
+                    </div>
+                    <div class="panel-section">
+                        <label class="panel-label">Hair Color</label>
+                        <div class="color-picker" id="hair-colors"></div>
+                    </div>
+                    <div class="panel-section">
+                        <label class="panel-label">Outfit Color</label>
+                        <div class="color-picker" id="outfit-colors"></div>
+                    </div>
+                    <button class="btn btn-primary" id="btn-save-char" style="width:100%">Save Character</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="shop-menu" class="screen">
+            <div class="shop-header">
+                <h1>Dream Shopping</h1>
+                <button class="btn btn-ghost" id="btn-shop-back">Back</button>
+            </div>
+            <div class="gift-banner">
+                <div class="gift-sign" id="gift-sign">GIFT SHOP</div>
+                <div class="gift-status" id="gift-status">Checking for gifts...</div>
+            </div>
+            <div class="shop-tabs">
+                <button class="shop-tab active" data-tab="places">Places</button>
+                <button class="shop-tab" data-tab="food">Food</button>
+                <button class="shop-tab" data-tab="gifts">Gifts</button>
+                <button class="shop-tab" data-tab="gear">Gear</button>
+            </div>
+            <div class="shop-grid" id="shop-grid"></div>
+        </div>
+
+        <div id="world-pick-modal">
+            <div class="world-pick-card">
+                <h2 id="world-pick-title">Add to which world?</h2>
+                <p id="world-pick-desc">Pick a world to place this building in. You can add it to more than one!</p>
+                <div class="world-pick-list" id="world-pick-list"></div>
+                <div class="world-pick-actions">
+                    <button class="btn btn-ghost" id="btn-world-pick-close">Done</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="game-ui">
+            <div class="game-hud">
+                <div id="world-label">Farm World</div>
+                <div style="font-size:13px;margin-top:4px;" id="hud-tip">B = Build · I = Inventory · E = Interact</div>
+            </div>
+            <div class="mode-indicator" id="mode-indicator">PLAY MODE</div>
+            <div class="controls-hint" id="controls-hint">
+                WASD move · Mouse look · Space jump · E interact (leash / saddle / ride) · B build · Left-click place · Right-click remove wall · I inventory · Esc menu
+            </div>
+            <div class="build-menu" id="build-menu">
+                <div class="build-item selected" data-item="wall"><div class="item-icon">🧱</div>Wall</div>
+                <div class="build-item" data-item="wallStripe"><div class="item-icon">🟨</div>Stripe</div>
+                <div class="build-item" data-item="wallFruit"><div class="item-icon">🍊</div>Fruit</div>
+                <div class="build-item" data-item="floor"><div class="item-icon">🟫</div>Floor</div>
+                <div class="build-item" data-item="floorGreen"><div class="item-icon">🟩</div>Carpet</div>
+                <div class="build-item" data-item="window"><div class="item-icon">🪟</div>Window</div>
+                <div class="build-item" data-item="door"><div class="item-icon">🚪</div>Door</div>
+                <div class="build-item" data-item="bed"><div class="item-icon">🛏️</div>Bed</div>
+                <div class="build-item" data-item="table"><div class="item-icon">🪵</div>Table</div>
+                <div class="build-item" data-item="chair"><div class="item-icon">🪑</div>Chair</div>
+                <div class="build-item" data-item="fridge"><div class="item-icon">🧊</div>Fridge</div>
+                <div class="build-item" data-item="sink"><div class="item-icon">🚰</div>Sink</div>
+                <div class="build-item" data-item="tub"><div class="item-icon">🛁</div>Tub</div>
+                <div class="build-item" data-item="tv"><div class="item-icon">📺</div>TV</div>
+                <div class="build-item" data-item="plant"><div class="item-icon">🪴</div>Plant</div>
+            </div>
+            <div class="hud-actions">
+                <button class="hud-btn build" id="btn-build-toggle">Build Mode</button>
+                <button class="hud-btn inv" id="btn-inventory">Inventory</button>
+                <button class="hud-btn menu" id="btn-exit-world">Menu</button>
+            </div>
+            <div id="inventory-panel">
+                <div class="inv-title">Inventory</div>
+                <div class="inv-grid" id="inv-grid"></div>
+                <p style="font-size:11px;opacity:0.75;margin-top:10px;line-height:1.4;">
+                    Equip a leash, then press E near an animal to lead it. Press E near a horse to mount/dismount or add saddle & harness.
+                </p>
+            </div>
+            <div id="touch-controls">
+                <div class="look-hint" id="look-hint">Drag right side to look around</div>
+                <div class="joystick-zone" id="joystick-zone">
+                    <div class="joystick-base">
+                        <div class="joystick-knob" id="joystick-knob"></div>
+                    </div>
+                </div>
+                <div class="touch-actions">
+                    <button class="touch-btn run" id="touch-run" type="button">Run</button>
+                    <button class="touch-btn jump" id="touch-jump" type="button">Jump</button>
+                    <button class="touch-btn interact" id="touch-interact" type="button">Use</button>
+                    <button class="touch-btn remove" id="touch-remove" type="button">Remove</button>
+                </div>
+            </div>
+        </div>
+        <div class="toast" id="toast"></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>
