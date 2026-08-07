@@ -1,5 +1,5 @@
 /**
- * Dream World — game logic
+ * Eli Dream World — game logic
  * Built for a kid creator: worlds, houses, build/remove, animals, horses, inventory, gift shop.
  */
 (function () {

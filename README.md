@@ -1,4 +1,4 @@
-# Dream World
+# Eli Dream World
 
 A 3D character / farm / build game — play in the browser on laptop or phone.
 
