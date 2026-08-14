@@ -378,6 +378,13 @@
                         <div class="char-grid" id="char-grid"></div>
                     </div>
                     <div class="panel-section">
+                        <label class="panel-label">Look (mini-doll style)</label>
+                        <div class="age-buttons" id="gender-buttons">
+                            <button class="age-btn active" data-gender="girl">Girl</button>
+                            <button class="age-btn" data-gender="boy">Boy</button>
+                        </div>
+                    </div>
+                    <div class="panel-section">
                         <label class="panel-label">Age</label>
                         <div class="age-buttons" id="age-buttons">
                             <button class="age-btn" data-age="newborn">Newborn</button>
@@ -398,8 +405,62 @@
                         <div class="color-picker" id="hair-colors"></div>
                     </div>
                     <div class="panel-section">
+                        <label class="panel-label">Hair Highlights</label>
+                        <div class="color-picker" id="highlight-colors"></div>
+                    </div>
+                    <div class="panel-section">
+                        <label class="panel-label">Long Hair Styles</label>
+                        <div class="age-buttons" id="long-hair-buttons"></div>
+                    </div>
+                    <div class="panel-section">
+                        <label class="panel-label">Men Hair Styles</label>
+                        <div class="age-buttons" id="men-hair-buttons"></div>
+                    </div>
+                    <div class="panel-section">
+                        <label class="panel-label">Top</label>
+                        <div class="age-buttons" id="top-buttons"></div>
+                    </div>
+                    <div class="panel-section">
+                        <label class="panel-label">Bottom</label>
+                        <div class="age-buttons" id="bottom-buttons"></div>
+                    </div>
+                    <div class="panel-section">
                         <label class="panel-label">Outfit Color</label>
                         <div class="color-picker" id="outfit-colors"></div>
+                    </div>
+                    <div class="panel-section">
+                        <label class="panel-label">Shoes</label>
+                        <div class="age-buttons" id="shoe-buttons"></div>
+                    </div>
+                    <div class="panel-section">
+                        <label class="panel-label">Socks</label>
+                        <div class="age-buttons" id="sock-buttons">
+                            <button class="age-btn active" data-socks="yes">On</button>
+                            <button class="age-btn" data-socks="no">Off</button>
+                        </div>
+                    </div>
+                    <div class="panel-section">
+                        <label class="panel-label">Eye Color</label>
+                        <div class="color-picker" id="eye-colors"></div>
+                    </div>
+                    <div class="panel-section">
+                        <label class="panel-label">Eyelashes</label>
+                        <div class="age-buttons" id="lash-buttons"></div>
+                    </div>
+                    <div class="panel-section">
+                        <label class="panel-label">Nose Size</label>
+                        <div class="age-buttons" id="nose-buttons"></div>
+                    </div>
+                    <div class="panel-section">
+                        <label class="panel-label">Ear Size</label>
+                        <div class="age-buttons" id="ear-buttons"></div>
+                    </div>
+                    <div class="panel-section">
+                        <label class="panel-label">Earrings</label>
+                        <div class="age-buttons" id="earring-buttons">
+                            <button class="age-btn" data-earrings="yes">On</button>
+                            <button class="age-btn active" data-earrings="no">Off</button>
+                        </div>
                     </div>
                     <button class="btn btn-primary" id="btn-save-char" style="width:100%">Save Character</button>
                 </div>
@@ -438,7 +499,7 @@
         <div id="game-ui">
             <div class="game-hud">
                 <div id="world-label">Farm World</div>
-                <div style="font-size:13px;margin-top:4px;" id="hud-tip">B = Build · I = Inventory · E = Interact</div>
+                <div style="font-size:13px;margin-top:4px;" id="hud-tip">B = Build · I = Inventory · E = Enter house / Interact</div>
             </div>
             <div class="mode-indicator" id="mode-indicator">PLAY MODE</div>
             <div class="controls-hint" id="controls-hint">

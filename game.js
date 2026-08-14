@@ -9,7 +9,68 @@
   const SKIN_COLORS = ['#FFDBAC', '#F1C27D', '#E0AC69', '#8D5524', '#C68642', '#E0B190', '#FFDFC4', '#5C3836'];
   const HAIR_COLORS = ['#090806', '#2C222B', '#71635A', '#B7A69E', '#D6C4C2', '#CABFB1', '#8B4513', '#FFD700', '#FF6B6B', '#4ECDC4', '#9370DB', '#FF69B4'];
   const OUTFIT_COLORS = ['#FF6B6B', '#4ECDC4', '#FFD700', '#FF8E53', '#95E1D3', '#F38181', '#AA96DA', '#FCBAD3', '#A8E6CF', '#DCEDC1', '#3498DB', '#E74C3C'];
+  const HIGHLIGHT_COLORS = ['#00000000', '#FFD700', '#FFE4B5', '#E0B0FF', '#87CEEB', '#FF69B4', '#FFFFFF'];
+  const EYE_COLORS = ['#2C1810', '#4A3728', '#1E90FF', '#228B22', '#708090', '#8B4513', '#000000'];
   const AGE_SCALES = { newborn: 0.25, baby: 0.4, child: 0.6, preteen: 0.75, teenager: 0.9, adult: 1.0, old: 0.95 };
+  const LONG_HAIR = [
+    { id: 'open', label: 'Open' },
+    { id: 'twoBraids', label: '2 Braids' },
+    { id: 'oneBraid', label: '1 Braid' },
+    { id: 'onePonytail', label: '1 Ponytail' },
+    { id: 'twoPonytails', label: '2 Ponytails' }
+  ];
+  const MEN_HAIR = [
+    { id: 'undercut', label: 'Undercut' },
+    { id: 'quiff', label: 'Quiff' },
+    { id: 'fade', label: 'Fade' },
+    { id: 'spiky', label: 'Spiky' },
+    { id: 'lightBald', label: 'Light Bald' },
+    { id: 'slickBack', label: 'Slick Back' },
+    { id: 'brushedUp', label: 'Brushed Up' },
+    { id: 'tousled', label: 'Tousled' },
+    { id: 'combOver', label: 'Comb Over' },
+    { id: 'fringe', label: 'Fringe' },
+    { id: 'longLayered', label: 'Long Layered' },
+    { id: 'fauxHawk', label: 'Faux Hawk' }
+  ];
+  const TOPS = [
+    { id: 'tshirt', label: 'T-Shirt' },
+    { id: 'crop', label: 'Crop Top' },
+    { id: 'hoodie', label: 'Hoodie' }
+  ];
+  const BOTTOMS = [
+    { id: 'jeans', label: 'Jeans' },
+    { id: 'skirt', label: 'Skirt' },
+    { id: 'shorts', label: 'Shorts' }
+  ];
+  const SHOES = [
+    { id: 'sneakers', label: 'Sneakers' },
+    { id: 'flats', label: 'Flats' },
+    { id: 'sandals', label: 'Sandals' }
+  ];
+
+  function defaultCharacter(i) {
+    return {
+      id: i,
+      gender: i % 2 === 0 ? 'girl' : 'boy',
+      age: 'preteen',
+      skinColor: SKIN_COLORS[i % SKIN_COLORS.length],
+      hairColor: HAIR_COLORS[i % HAIR_COLORS.length],
+      highlightColor: '#00000000',
+      outfitColor: OUTFIT_COLORS[i % OUTFIT_COLORS.length],
+      hairStyle: i % 2 === 0 ? 'open' : 'fade',
+      top: 'tshirt',
+      bottom: i % 2 === 0 ? 'skirt' : 'jeans',
+      shoes: 'sneakers',
+      socks: true,
+      eyeColor: EYE_COLORS[i % EYE_COLORS.length],
+      eyelashes: 'short',
+      noseSize: 1,
+      earSize: 1,
+      earrings: false,
+      saved: i === 0
+    };
+  }
 
   const WORLDS = [
     { id: 'farm', name: 'Farm World', emoji: '🌾', desc: 'Barns, animals, and three starter houses', sky: 0x87CEEB, ground: 0x7CFC00 },
@@ -82,6 +143,8 @@
   let touchLookLast = null;
   let touchRunning = false;
   let isTouchDevice = false;
+  let enterableHouses = [];
+  let insideHouse = null;
   let cameraAngle = 0;
   let cameraHeight = 6;
   let cameraDistance = 10;
@@ -252,14 +315,7 @@
   // ---------- Init ----------
   function init() {
     for (let i = 0; i < 25; i++) {
-      CHARACTERS.push({
-        id: i,
-        age: 'preteen',
-        skinColor: SKIN_COLORS[i % SKIN_COLORS.length],
-        hairColor: HAIR_COLORS[i % HAIR_COLORS.length],
-        outfitColor: OUTFIT_COLORS[i % OUTFIT_COLORS.length],
-        saved: i === 0
-      });
+      CHARACTERS.push(defaultCharacter(i));
     }
     loadSave();
 
@@ -301,64 +357,183 @@
     animate();
   }
 
-  // ---------- Character mesh ----------
+  // ---------- Character mesh (LEGO Friends mini-doll vibe) ----------
   function buildCharacterMesh(charData, scale) {
     const group = new THREE.Group();
-    const ageScale = AGE_SCALES[charData.age] || 0.75;
+    const c = Object.assign(defaultCharacter(0), charData || {});
+    const ageScale = AGE_SCALES[c.age] || 0.75;
     const s = (scale || 1) * ageScale;
-    const skin = new THREE.Color(charData.skinColor);
-    const hair = new THREE.Color(charData.hairColor);
-    const outfit = new THREE.Color(charData.outfitColor);
+    const skin = new THREE.Color(c.skinColor);
+    const hair = new THREE.Color(c.hairColor);
+    const highlight = (c.highlightColor && c.highlightColor !== '#00000000') ? new THREE.Color(c.highlightColor) : null;
+    const outfit = new THREE.Color(c.outfitColor);
+    const eyeCol = new THREE.Color(c.eyeColor || '#2C1810');
+    const noseS = (c.noseSize || 1) * s;
+    const earS = (c.earSize || 1) * s;
 
-    group.add(createBox(outfit, 0.6 * s, 0.7 * s, 0.35 * s, 0, 0.6 * s, 0));
-    const headSize = 0.5 * s;
-    group.add(createBox(skin, headSize, headSize, headSize, 0, 1.25 * s, 0));
-    group.add(createBox(hair, headSize * 1.1, headSize * 0.3, headSize * 1.1, 0, 1.5 * s, 0));
-    group.add(createBox(hair, headSize * 1.1, headSize * 0.6, headSize * 0.3, 0, 1.3 * s, -0.22 * s));
+    // Slim mini-doll proportions
+    const torsoH = c.top === 'crop' ? 0.45 * s : 0.65 * s;
+    const torsoY = c.top === 'crop' ? 0.95 * s : 0.85 * s;
+    const top = createBox(outfit, 0.42 * s, torsoH, 0.24 * s, 0, torsoY, 0);
+    group.add(top);
+    if (c.top === 'hoodie') {
+      group.add(createBox(outfit, 0.48 * s, 0.2 * s, 0.28 * s, 0, torsoY + torsoH * 0.45, -0.02 * s));
+      group.add(createBox(outfit, 0.35 * s, 0.18 * s, 0.2 * s, 0, 1.3 * s, -0.05 * s)); // hood
+    }
 
-    const eyeGeo = new THREE.BoxGeometry(0.08 * s, 0.08 * s, 0.02 * s);
-    const eyeMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    // Head (slightly larger, friendly)
+    const headSize = 0.42 * s;
+    const headY = 1.45 * s;
+    group.add(createBox(skin, headSize, headSize, headSize * 0.9, 0, headY, 0));
+    // Neck
+    group.add(createBox(skin, 0.12 * s, 0.12 * s, 0.12 * s, 0, 1.22 * s, 0));
+
+    // Ears
+    group.add(createBox(skin, 0.06 * earS, 0.12 * earS, 0.05 * earS, -headSize * 0.55, headY, 0));
+    group.add(createBox(skin, 0.06 * earS, 0.12 * earS, 0.05 * earS, headSize * 0.55, headY, 0));
+
+    // Eyes + lashes
+    const eyeGeo = new THREE.BoxGeometry(0.09 * s, 0.1 * s, 0.03 * s);
+    const eyeMat = new THREE.MeshBasicMaterial({ color: eyeCol });
     const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
-    leftEye.position.set(-0.12 * s, 1.28 * s, 0.26 * s);
+    leftEye.position.set(-0.1 * s, headY + 0.02 * s, headSize * 0.42);
     group.add(leftEye);
     const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
-    rightEye.position.set(0.12 * s, 1.28 * s, 0.26 * s);
+    rightEye.position.set(0.1 * s, headY + 0.02 * s, headSize * 0.42);
     group.add(rightEye);
+    const pupil = new THREE.Mesh(new THREE.BoxGeometry(0.04 * s, 0.04 * s, 0.02 * s), new THREE.MeshBasicMaterial({ color: 0x111111 }));
+    const p1 = pupil.clone(); p1.position.set(-0.1 * s, headY + 0.02 * s, headSize * 0.48); group.add(p1);
+    const p2 = pupil.clone(); p2.position.set(0.1 * s, headY + 0.02 * s, headSize * 0.48); group.add(p2);
+    if (c.eyelashes === 'short' || c.eyelashes === 'long') {
+      const lh = c.eyelashes === 'long' ? 0.06 * s : 0.035 * s;
+      group.add(createBox(0x111111, 0.1 * s, lh, 0.02 * s, -0.1 * s, headY + 0.08 * s, headSize * 0.45));
+      group.add(createBox(0x111111, 0.1 * s, lh, 0.02 * s, 0.1 * s, headY + 0.08 * s, headSize * 0.45));
+    }
+    // Smile
+    group.add(createBox(0xE57373, 0.1 * s, 0.03 * s, 0.02 * s, 0, headY - 0.1 * s, headSize * 0.45));
+    // Nose
+    group.add(createBox(skin, 0.06 * noseS, 0.05 * noseS, 0.05 * noseS, 0, headY - 0.02 * s, headSize * 0.48));
 
-    const armGeo = new THREE.BoxGeometry(0.15 * s, 0.5 * s, 0.15 * s);
+    if (c.earrings) {
+      group.add(createBox(0xFFD700, 0.05 * s, 0.08 * s, 0.05 * s, -headSize * 0.55, headY - 0.12 * s, 0));
+      group.add(createBox(0xFFD700, 0.05 * s, 0.08 * s, 0.05 * s, headSize * 0.55, headY - 0.12 * s, 0));
+    }
+
+    addHairStyle(group, c.hairStyle || 'open', hair, highlight, s, headY, headSize);
+
+    // Slim arms
+    const armGeo = new THREE.BoxGeometry(0.1 * s, 0.55 * s, 0.1 * s);
     const armMat = new THREE.MeshLambertMaterial({ color: skin });
     const leftArm = new THREE.Mesh(armGeo, armMat);
-    leftArm.position.set(-0.42 * s, 0.7 * s, 0);
+    leftArm.position.set(-0.3 * s, 0.85 * s, 0);
     group.add(leftArm);
     const rightArm = new THREE.Mesh(armGeo, armMat);
-    rightArm.position.set(0.42 * s, 0.7 * s, 0);
+    rightArm.position.set(0.3 * s, 0.85 * s, 0);
     group.add(rightArm);
+    // Hands
+    group.add(createBox(skin, 0.1 * s, 0.1 * s, 0.1 * s, -0.3 * s, 0.52 * s, 0));
+    group.add(createBox(skin, 0.1 * s, 0.1 * s, 0.1 * s, 0.3 * s, 0.52 * s, 0));
 
-    const legGeo = new THREE.BoxGeometry(0.2 * s, 0.5 * s, 0.2 * s);
-    const legMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
-    const leftLeg = new THREE.Mesh(legGeo, legMat);
-    leftLeg.position.set(-0.15 * s, 0.15 * s, 0);
+    // Bottoms
+    let bottomColor = 0x3F51B5;
+    if (c.bottom === 'skirt') bottomColor = outfit;
+    if (c.bottom === 'shorts') bottomColor = 0x42A5F5;
+    if (c.bottom === 'jeans') bottomColor = 0x3949AB;
+    const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.14 * s, c.bottom === 'skirt' ? 0.2 * s : (c.bottom === 'shorts' ? 0.35 * s : 0.55 * s), 0.14 * s), new THREE.MeshLambertMaterial({ color: bottomColor }));
+    const rightLeg = leftLeg.clone();
+    if (c.bottom === 'skirt') {
+      group.add(createBox(outfit, 0.5 * s, 0.28 * s, 0.35 * s, 0, 0.48 * s, 0));
+      leftLeg.position.set(-0.1 * s, 0.28 * s, 0);
+      rightLeg.position.set(0.1 * s, 0.28 * s, 0);
+      leftLeg.material = new THREE.MeshLambertMaterial({ color: skin });
+      rightLeg.material = new THREE.MeshLambertMaterial({ color: skin });
+    } else if (c.bottom === 'shorts') {
+      leftLeg.position.set(-0.1 * s, 0.4 * s, 0);
+      rightLeg.position.set(0.1 * s, 0.4 * s, 0);
+      group.add(createBox(skin, 0.12 * s, 0.25 * s, 0.12 * s, -0.1 * s, 0.18 * s, 0));
+      group.add(createBox(skin, 0.12 * s, 0.25 * s, 0.12 * s, 0.1 * s, 0.18 * s, 0));
+    } else {
+      leftLeg.position.set(-0.1 * s, 0.3 * s, 0);
+      rightLeg.position.set(0.1 * s, 0.3 * s, 0);
+    }
     group.add(leftLeg);
-    const rightLeg = new THREE.Mesh(legGeo, legMat);
-    rightLeg.position.set(0.15 * s, 0.15 * s, 0);
     group.add(rightLeg);
 
-    if (charData.age === 'baby' || charData.age === 'newborn') {
-      group.add(createBox(0xFF69B4, 0.08 * s, 0.08 * s, 0.05 * s, 0, 1.15 * s, 0.28 * s));
+    // Socks
+    if (c.socks) {
+      group.add(createBox(0xFAFAFA, 0.15 * s, 0.12 * s, 0.16 * s, -0.1 * s, 0.1 * s, 0));
+      group.add(createBox(0xFAFAFA, 0.15 * s, 0.12 * s, 0.16 * s, 0.1 * s, 0.1 * s, 0));
     }
-    if (charData.age === 'old') {
-      const glassGeo = new THREE.BoxGeometry(0.15 * s, 0.08 * s, 0.02 * s);
-      const glassMat = new THREE.MeshBasicMaterial({ color: 0x333333 });
-      const g1 = new THREE.Mesh(glassGeo, glassMat);
-      g1.position.set(-0.12 * s, 1.3 * s, 0.27 * s);
-      group.add(g1);
-      const g2 = new THREE.Mesh(glassGeo, glassMat);
-      g2.position.set(0.12 * s, 1.3 * s, 0.27 * s);
-      group.add(g2);
-      group.add(createBox(0x8B4513, 0.05 * s, 0.8 * s, 0.05 * s, 0.5 * s, 0.4 * s, 0.2 * s));
+    // Shoes
+    let shoeColor = 0xFFFFFF;
+    if (c.shoes === 'flats') shoeColor = 0xF48FB1;
+    if (c.shoes === 'sandals') shoeColor = 0x8D6E63;
+    group.add(createBox(shoeColor, 0.16 * s, 0.1 * s, 0.22 * s, -0.1 * s, 0.04 * s, 0.02 * s));
+    group.add(createBox(shoeColor, 0.16 * s, 0.1 * s, 0.22 * s, 0.1 * s, 0.04 * s, 0.02 * s));
+
+    if (c.age === 'baby' || c.age === 'newborn') {
+      group.add(createBox(0xFF69B4, 0.08 * s, 0.08 * s, 0.05 * s, 0, headY - 0.12 * s, headSize * 0.48));
     }
-    group.userData.limbStart = 4;
+    if (c.age === 'old') {
+      group.add(createBox(0x333333, 0.14 * s, 0.06 * s, 0.02 * s, -0.1 * s, headY + 0.02 * s, headSize * 0.5));
+      group.add(createBox(0x333333, 0.14 * s, 0.06 * s, 0.02 * s, 0.1 * s, headY + 0.02 * s, headSize * 0.5));
+    }
+
+    group.userData.leftArm = leftArm;
+    group.userData.rightArm = rightArm;
+    group.userData.leftLeg = leftLeg;
+    group.userData.rightLeg = rightLeg;
     return group;
+  }
+
+  function addHairStyle(group, style, hair, highlight, s, headY, headSize) {
+    const hy = headY + headSize * 0.45;
+    const add = (col, w, h, d, x, y, z) => group.add(createBox(col, w, h, d, x, y, z));
+    const hc = hair.getHex();
+    const hi = highlight ? highlight.getHex() : null;
+
+    if (style === 'open' || style === 'twoBraids' || style === 'oneBraid' || style === 'onePonytail' || style === 'twoPonytails' || style === 'longLayered') {
+      add(hc, headSize * 1.15, headSize * 0.35, headSize * 1.1, 0, hy, 0);
+      add(hc, headSize * 1.1, headSize * 0.9, headSize * 0.35, 0, headY, -headSize * 0.4);
+      if (hi) add(hi, headSize * 0.25, headSize * 0.7, headSize * 0.2, 0.15 * s, headY, -headSize * 0.42);
+    }
+    if (style === 'twoBraids') {
+      add(hc, 0.1 * s, 0.7 * s, 0.1 * s, -0.2 * s, headY - 0.2 * s, -0.15 * s);
+      add(hc, 0.1 * s, 0.7 * s, 0.1 * s, 0.2 * s, headY - 0.2 * s, -0.15 * s);
+    } else if (style === 'oneBraid') {
+      add(hc, 0.12 * s, 0.85 * s, 0.12 * s, 0, headY - 0.25 * s, -0.25 * s);
+    } else if (style === 'onePonytail') {
+      add(hc, 0.18 * s, 0.18 * s, 0.35 * s, 0, headY, -0.45 * s);
+    } else if (style === 'twoPonytails') {
+      add(hc, 0.14 * s, 0.14 * s, 0.3 * s, -0.22 * s, hy - 0.05 * s, -0.2 * s);
+      add(hc, 0.14 * s, 0.14 * s, 0.3 * s, 0.22 * s, hy - 0.05 * s, -0.2 * s);
+    } else if (style === 'undercut' || style === 'fade' || style === 'combOver') {
+      add(hc, headSize * 0.9, headSize * 0.25, headSize * 0.9, 0, hy, 0.02 * s);
+      add(hc, headSize * 0.7, headSize * 0.2, headSize * 0.5, 0.08 * s, hy - 0.05 * s, 0.05 * s);
+    } else if (style === 'quiff' || style === 'brushedUp') {
+      add(hc, headSize * 0.9, headSize * 0.25, headSize * 0.85, 0, hy, 0);
+      add(hc, headSize * 0.5, headSize * 0.35, headSize * 0.35, 0, hy + 0.15 * s, 0.15 * s);
+    } else if (style === 'spiky') {
+      add(hc, headSize * 0.85, headSize * 0.2, headSize * 0.85, 0, hy, 0);
+      for (let i = -1; i <= 1; i++) add(hc, 0.08 * s, 0.2 * s, 0.08 * s, i * 0.12 * s, hy + 0.15 * s, 0.1 * s);
+    } else if (style === 'lightBald') {
+      add(hc, headSize * 0.7, headSize * 0.08, headSize * 0.7, 0, hy - 0.02 * s, 0);
+    } else if (style === 'slickBack') {
+      add(hc, headSize * 1.0, headSize * 0.28, headSize * 1.0, 0, hy, -0.05 * s);
+      add(hc, headSize * 0.9, headSize * 0.35, headSize * 0.4, 0, headY + 0.05 * s, -0.35 * s);
+    } else if (style === 'tousled') {
+      add(hc, headSize * 1.05, headSize * 0.3, headSize * 1.0, 0, hy, 0);
+      add(hc, 0.2 * s, 0.15 * s, 0.2 * s, -0.15 * s, hy + 0.08 * s, 0.1 * s);
+      add(hc, 0.2 * s, 0.15 * s, 0.2 * s, 0.12 * s, hy + 0.1 * s, 0.05 * s);
+    } else if (style === 'fringe') {
+      add(hc, headSize * 1.05, headSize * 0.3, headSize * 1.0, 0, hy, 0);
+      add(hc, headSize * 0.95, headSize * 0.22, headSize * 0.25, 0, headY + 0.08 * s, headSize * 0.4);
+    } else if (style === 'fauxHawk') {
+      add(hc, headSize * 0.85, headSize * 0.2, headSize * 0.85, 0, hy, 0);
+      add(hc, 0.18 * s, 0.35 * s, 0.5 * s, 0, hy + 0.12 * s, 0);
+    } else {
+      add(hc, headSize * 1.1, headSize * 0.3, headSize * 1.1, 0, hy, 0);
+    }
   }
 
   function createCharacterCreatorScene() {
@@ -388,14 +563,25 @@
   }
 
   function syncCreatorControls() {
-    const c = CHARACTERS[selectedSlot];
-    document.querySelectorAll('.age-btn').forEach((b) => {
-      b.classList.toggle('active', b.dataset.age === c.age);
-    });
+    const c = Object.assign(defaultCharacter(selectedSlot), CHARACTERS[selectedSlot]);
+    CHARACTERS[selectedSlot] = c;
     selectedAge = c.age;
+    document.querySelectorAll('#age-buttons .age-btn').forEach((b) => b.classList.toggle('active', b.dataset.age === c.age));
+    document.querySelectorAll('#gender-buttons .age-btn').forEach((b) => b.classList.toggle('active', b.dataset.gender === c.gender));
+    document.querySelectorAll('#long-hair-buttons .age-btn, #men-hair-buttons .age-btn').forEach((b) => b.classList.toggle('active', b.dataset.style === c.hairStyle));
+    document.querySelectorAll('#top-buttons .age-btn').forEach((b) => b.classList.toggle('active', b.dataset.top === c.top));
+    document.querySelectorAll('#bottom-buttons .age-btn').forEach((b) => b.classList.toggle('active', b.dataset.bottom === c.bottom));
+    document.querySelectorAll('#shoe-buttons .age-btn').forEach((b) => b.classList.toggle('active', b.dataset.shoes === c.shoes));
+    document.querySelectorAll('#sock-buttons .age-btn').forEach((b) => b.classList.toggle('active', (b.dataset.socks === 'yes') === !!c.socks));
+    document.querySelectorAll('#lash-buttons .age-btn').forEach((b) => b.classList.toggle('active', b.dataset.lashes === c.eyelashes));
+    document.querySelectorAll('#nose-buttons .age-btn').forEach((b) => b.classList.toggle('active', Number(b.dataset.nose) === Number(c.noseSize)));
+    document.querySelectorAll('#ear-buttons .age-btn').forEach((b) => b.classList.toggle('active', Number(b.dataset.ear) === Number(c.earSize)));
+    document.querySelectorAll('#earring-buttons .age-btn').forEach((b) => b.classList.toggle('active', (b.dataset.earrings === 'yes') === !!c.earrings));
     syncColorPicker('skin-colors', SKIN_COLORS, c.skinColor);
     syncColorPicker('hair-colors', HAIR_COLORS, c.hairColor);
+    syncColorPicker('highlight-colors', HIGHLIGHT_COLORS, c.highlightColor || HIGHLIGHT_COLORS[0]);
     syncColorPicker('outfit-colors', OUTFIT_COLORS, c.outfitColor);
+    syncColorPicker('eye-colors', EYE_COLORS, c.eyeColor);
   }
 
   function syncColorPicker(id, colors, value) {
@@ -466,19 +652,87 @@
       grid.appendChild(slot);
     }
 
-    document.querySelectorAll('.age-btn').forEach((btn) => {
+    function fillOptionButtons(containerId, items, dataKey, prop, getId) {
+      const box = $(containerId);
+      if (!box) return;
+      box.innerHTML = '';
+      items.forEach((item, idx) => {
+        const id = getId ? getId(item) : item.id;
+        const label = item.label || item;
+        const btn = document.createElement('button');
+        btn.className = 'age-btn' + (idx === 0 ? ' active' : '');
+        btn.dataset[dataKey] = id;
+        btn.textContent = label;
+        btn.addEventListener('click', () => {
+          box.querySelectorAll('.age-btn').forEach((b) => b.classList.remove('active'));
+          btn.classList.add('active');
+          CHARACTERS[selectedSlot][prop] = id;
+          // keep long/men hair exclusive active state across both rows
+          if (prop === 'hairStyle') {
+            document.querySelectorAll('#long-hair-buttons .age-btn, #men-hair-buttons .age-btn').forEach((b) => {
+              b.classList.toggle('active', b.dataset.style === id);
+            });
+          }
+          updatePreviewCharacter();
+        });
+        box.appendChild(btn);
+      });
+    }
+
+    document.querySelectorAll('#age-buttons .age-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.age-btn').forEach((b) => b.classList.remove('active'));
+        document.querySelectorAll('#age-buttons .age-btn').forEach((b) => b.classList.remove('active'));
         btn.classList.add('active');
         selectedAge = btn.dataset.age;
         CHARACTERS[selectedSlot].age = selectedAge;
         updatePreviewCharacter();
       });
     });
+    document.querySelectorAll('#gender-buttons .age-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#gender-buttons .age-btn').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        CHARACTERS[selectedSlot].gender = btn.dataset.gender;
+        if (btn.dataset.gender === 'boy' && LONG_HAIR.some((h) => h.id === CHARACTERS[selectedSlot].hairStyle)) {
+          CHARACTERS[selectedSlot].hairStyle = 'fade';
+        }
+        if (btn.dataset.gender === 'girl' && MEN_HAIR.some((h) => h.id === CHARACTERS[selectedSlot].hairStyle)) {
+          CHARACTERS[selectedSlot].hairStyle = 'open';
+        }
+        updatePreviewCharacter();
+      });
+    });
+    fillOptionButtons('long-hair-buttons', LONG_HAIR, 'style', 'hairStyle');
+    fillOptionButtons('men-hair-buttons', MEN_HAIR, 'style', 'hairStyle');
+    fillOptionButtons('top-buttons', TOPS, 'top', 'top');
+    fillOptionButtons('bottom-buttons', BOTTOMS, 'bottom', 'bottom');
+    fillOptionButtons('shoe-buttons', SHOES, 'shoes', 'shoes');
+    fillOptionButtons('lash-buttons', [{ id: 'none', label: 'None' }, { id: 'short', label: 'Short' }, { id: 'long', label: 'Long' }], 'lashes', 'eyelashes');
+    fillOptionButtons('nose-buttons', [{ id: 0.7, label: 'Small' }, { id: 1, label: 'Normal' }, { id: 1.3, label: 'Big' }], 'nose', 'noseSize');
+    fillOptionButtons('ear-buttons', [{ id: 0.7, label: 'Small' }, { id: 1, label: 'Normal' }, { id: 1.3, label: 'Big' }], 'ear', 'earSize');
+
+    document.querySelectorAll('#sock-buttons .age-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#sock-buttons .age-btn').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        CHARACTERS[selectedSlot].socks = btn.dataset.socks === 'yes';
+        updatePreviewCharacter();
+      });
+    });
+    document.querySelectorAll('#earring-buttons .age-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#earring-buttons .age-btn').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        CHARACTERS[selectedSlot].earrings = btn.dataset.earrings === 'yes';
+        updatePreviewCharacter();
+      });
+    });
 
     createColorPicker('skin-colors', SKIN_COLORS, 'skinColor');
     createColorPicker('hair-colors', HAIR_COLORS, 'hairColor');
+    createColorPicker('highlight-colors', HIGHLIGHT_COLORS, 'highlightColor');
     createColorPicker('outfit-colors', OUTFIT_COLORS, 'outfitColor');
+    createColorPicker('eye-colors', EYE_COLORS, 'eyeColor');
 
     const worldGrid = $('world-grid');
     WORLDS.forEach((w) => {
@@ -494,10 +748,18 @@
 
   function createColorPicker(id, colors, property) {
     const container = $(id);
+    if (!container) return;
+    container.innerHTML = '';
     colors.forEach((color, idx) => {
       const swatch = document.createElement('div');
       swatch.className = 'color-swatch' + (idx === 0 ? ' active' : '');
-      swatch.style.backgroundColor = color;
+      if (color === '#00000000') {
+        swatch.style.background = 'linear-gradient(45deg, #ddd 25%, #fff 25%, #fff 50%, #ddd 50%, #ddd 75%, #fff 75%)';
+        swatch.style.backgroundSize = '8px 8px';
+        swatch.title = 'None';
+      } else {
+        swatch.style.backgroundColor = color;
+      }
       swatch.addEventListener('click', () => {
         container.querySelectorAll('.color-swatch').forEach((s) => s.classList.remove('active'));
         swatch.classList.add('active');
@@ -720,6 +982,8 @@
     leashedAnimals = [];
     buildGhost = null;
     groundMesh = null;
+    enterableHouses = [];
+    insideHouse = null;
   }
 
   function addLights() {
@@ -751,7 +1015,7 @@
     $('btn-build-toggle').textContent = 'Build Mode';
     if (isTouchDevice) {
       $('touch-controls').classList.add('active');
-      $('hud-tip').textContent = 'Joystick move · Drag to look · Use / Jump / Run';
+      $('hud-tip').textContent = 'Joystick · Use at door to enter houses · Build inside';
       setTimeout(() => {
         const hint = $('look-hint');
         if (hint) hint.style.display = 'none';
@@ -968,6 +1232,86 @@
     house.add(carpet);
   }
 
+  function registerEnterableHouse(house, name, doorLocal, insideLocal, frontWallZs) {
+    // doorLocal / insideLocal are offsets from house.position
+    const doorWorld = {
+      x: house.position.x + doorLocal.x,
+      y: house.position.y + (doorLocal.y || 0),
+      z: house.position.z + doorLocal.z
+    };
+    const insideWorld = {
+      x: house.position.x + insideLocal.x,
+      y: 0,
+      z: house.position.z + insideLocal.z
+    };
+    const frontWalls = [];
+    house.traverse((obj) => {
+      if (!obj.isMesh || !obj.userData.removable) return;
+      // front-facing walls roughly at positive local Z near door
+      if (Math.abs(obj.position.z - (frontWallZs || 2.5)) < 0.4 && (obj.userData.buildLabel === 'wall' || obj.userData.buildLabel === 'door' || obj.userData.buildLabel === 'window')) {
+        frontWalls.push(obj);
+      }
+    });
+    enterableHouses.push({
+      name,
+      house,
+      door: doorWorld,
+      inside: insideWorld,
+      outside: { x: doorWorld.x, y: 0, z: doorWorld.z + 2.2 },
+      frontWalls
+    });
+    // Floating enter hint
+    const label = makeLabelSprite('🏠 ' + name + ' · Use to enter');
+    label.position.set(doorLocal.x, 3.2, doorLocal.z + 0.2);
+    label.scale.set(2.8, 0.55, 1);
+    house.add(label);
+  }
+
+  function nearestEnterableHouse(maxDist) {
+    if (!player) return null;
+    let best = null, bestD = maxDist;
+    enterableHouses.forEach((h) => {
+      const target = insideHouse === h ? h.inside : h.door;
+      const dx = target.x - player.position.x;
+      const dz = target.z - player.position.z;
+      const d = Math.sqrt(dx * dx + dz * dz);
+      if (d < bestD) { bestD = d; best = h; }
+    });
+    return best;
+  }
+
+  function setHouseCutaway(houseEntry, cutaway) {
+    if (!houseEntry) return;
+    houseEntry.frontWalls.forEach((w) => {
+      if (!w.material) return;
+      w.visible = !cutaway;
+    });
+  }
+
+  function tryEnterOrExitHouse() {
+    const h = nearestEnterableHouse(insideHouse ? 3.5 : 2.8);
+    if (!h) return false;
+    if (insideHouse === h) {
+      setHouseCutaway(h, false);
+      player.position.set(h.outside.x, 0, h.outside.z);
+      insideHouse = null;
+      toast('Left ' + h.name);
+      $('hud-tip').textContent = isTouchDevice
+        ? 'Joystick move · Drag to look · Use near door to enter'
+        : 'E near a house door to enter · Build inside!';
+      return true;
+    }
+    if (insideHouse && insideHouse !== h) {
+      setHouseCutaway(insideHouse, false);
+    }
+    setHouseCutaway(h, true);
+    player.position.set(h.inside.x, 0, h.inside.z);
+    insideHouse = h;
+    toast('Welcome inside ' + h.name + '! Build Mode works here ✨');
+    $('hud-tip').textContent = 'Inside! Build Mode to decorate · Use near door to exit';
+    return true;
+  }
+
   // House 1: White suburban home with porch, fence, sunflowers
   function buildStarterHouse1(x, y, z) {
     const house = new THREE.Group();
@@ -1027,6 +1371,7 @@
     house.add(createBox(0x43A047, 2.2, 2.0, 2.2, 4.5, 2.8, -3));
     addInteriorRooms(house, 6.5, 4.5);
     scene.add(house);
+    registerEnterableHouse(house, 'Free House 1', { x: 0, y: 0, z: 2.55 }, { x: 0, z: 0 }, 2.5);
   }
 
   // House 2: Modern villa with pool, pergola, BBQ
@@ -1080,6 +1425,7 @@
     house.add(createBox(0xB0BEC5, 0.8, 0.05, 0.05, 2.5, 6.55, 1));
     addInteriorRooms(house, 7.5, 5.5);
     scene.add(house);
+    registerEnterableHouse(house, 'Free House 2', { x: 0, y: 0, z: 3.1 }, { x: 0, z: 0 }, 3.0);
   }
 
   // House 3: Pink cute cafe house with bows & flowers
@@ -1151,6 +1497,7 @@
     }
     addInteriorRooms(house, 6.5, 4.5);
     scene.add(house);
+    registerEnterableHouse(house, 'Free House 3', { x: 0, y: 0, z: 2.55 }, { x: 0, z: 0 }, 2.5);
   }
 
   function buildBarn(x, y, z) {
@@ -1668,9 +2015,11 @@
       return;
     }
 
+    if (tryEnterOrExitHouse()) return;
+
     const animal = nearestAnimal(3.5);
     if (!animal) {
-      toast('Nothing nearby to interact with');
+      toast(insideHouse ? 'Inside — open Build Mode to decorate!' : 'Stand by a house door and press Use / E');
       return;
     }
 
@@ -1949,7 +2298,14 @@
     const { moveX, moveZ } = getMoveVector(0.08);
     player.position.x += moveX;
     player.position.z += moveZ;
-    if (moveX !== 0 || moveZ !== 0) player.rotation.y = Math.atan2(moveX, moveZ) + Math.PI;
+    // Roblox-style: face the direction you walk (smoothed)
+    if (moveX !== 0 || moveZ !== 0) {
+      const targetRot = Math.atan2(moveX, moveZ);
+      let diff = targetRot - player.rotation.y;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      player.rotation.y += diff * 0.2;
+    }
 
     if (!player.userData.jumpVel) player.userData.jumpVel = 0;
     player.position.y += player.userData.jumpVel;
@@ -1961,17 +2317,19 @@
 
     const isMoving = moveX !== 0 || moveZ !== 0;
     const time = Date.now() * 0.01;
-    if (player.children.length >= 8) {
+    const la = player.userData.leftArm, ra = player.userData.rightArm;
+    const ll = player.userData.leftLeg, rl = player.userData.rightLeg;
+    if (la && ra && ll && rl) {
       if (isMoving && player.position.y <= 0.1) {
-        player.children[4].rotation.x = Math.sin(time * 2) * 0.5;
-        player.children[5].rotation.x = -Math.sin(time * 2) * 0.5;
-        player.children[6].rotation.x = Math.sin(time * 2 + Math.PI) * 0.4;
-        player.children[7].rotation.x = Math.sin(time * 2) * 0.4;
+        la.rotation.x = Math.sin(time * 2) * 0.5;
+        ra.rotation.x = -Math.sin(time * 2) * 0.5;
+        ll.rotation.x = Math.sin(time * 2 + Math.PI) * 0.4;
+        rl.rotation.x = Math.sin(time * 2) * 0.4;
       } else {
-        player.children[4].rotation.x = Math.sin(time) * 0.1;
-        player.children[5].rotation.x = -Math.sin(time) * 0.1;
-        player.children[6].rotation.x = 0;
-        player.children[7].rotation.x = 0;
+        la.rotation.x = Math.sin(time) * 0.08;
+        ra.rotation.x = -Math.sin(time) * 0.08;
+        ll.rotation.x = 0;
+        rl.rotation.x = 0;
       }
     }
   }
