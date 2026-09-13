@@ -1113,8 +1113,9 @@
         const h = 4 + Math.random() * 10;
         const bx = (i % 4) * 8 - 12;
         const bz = Math.floor(i / 4) * 10 - 4;
-        scene.add(createBox(0x708090, 3, h, 3, bx, h / 2, bz));
-        addWorldSolid(3, h, 3, bx, h / 2, bz);
+        const bldg = createBox(0x708090, 3, h, 3, bx, h / 2, bz);
+        scene.add(bldg);
+        addSolidShellMesh(bldg);
       }
       spawnAnimals(8);
     } else if (world.id === 'field') {
@@ -1139,9 +1140,15 @@
       // Fürstenwalde-inspired town square
       scene.add(createBox(0xA0522D, 14, 0.08, 14, 0, 0.04, 6));
       scene.add(createCylinder(0x808080, 0.6, 0.8, 2.5, 0, 1.25, 6, 12));
-      scene.add(createBox(0xC0C0C0, 8, 4, 5, -14, 2, 4));
-      scene.add(createBox(0xCD853F, 7, 3.5, 5, 14, 1.75, 4));
-      scene.add(createBox(0xDEB887, 6, 3, 4, 0, 1.5, 16));
+      const townHall = createBox(0xC0C0C0, 8, 4, 5, -14, 2, 4);
+      const townShop = createBox(0xCD853F, 7, 3.5, 5, 14, 1.75, 4);
+      const townBarn = createBox(0xDEB887, 6, 3, 4, 0, 1.5, 16);
+      scene.add(townHall);
+      scene.add(townShop);
+      scene.add(townBarn);
+      addSolidShellMesh(townHall);
+      addSolidShellMesh(townShop);
+      addSolidShellMesh(townBarn);
       spawnAnimals(10);
     }
 
@@ -1188,13 +1195,13 @@
     const w = placeId === 'airport' || placeId === 'mall' ? 8 : 5;
     const d = placeId === 'airport' ? 6 : 4.5;
 
-    g.add(createBox(color, w, h, d, 0, h / 2, 0));
+    const shell = createBox(color, w, h, d, 0, h / 2, 0);
+    g.add(shell);
     g.add(createBox(0x5D4037, w + 0.4, 0.25, d + 0.4, 0, h + 0.1, 0));
     // Door + windows
     g.add(createBox(0x5D4037, 1.1, 2.0, 0.1, 0, 1.1, d / 2 + 0.02));
     g.add(createBox(0x81D4FA, 1.0, 1.0, 0.08, -1.5, 2.0, d / 2 + 0.02));
     g.add(createBox(0x81D4FA, 1.0, 1.0, 0.08, 1.5, 2.0, d / 2 + 0.02));
-    addWorldSolid(w, h, d, x, y + h / 2, z);
 
     if (placeId === 'hospital') {
       g.add(createBox(0xE53935, 0.35, 1.4, 0.15, 0, h + 1.0, 0));
@@ -1220,6 +1227,7 @@
     g.add(label);
 
     scene.add(g);
+    addSolidShellMesh(shell);
     return g;
   }
 
@@ -1234,19 +1242,72 @@
   }
 
   function addCollisionBox(parent, w, h, d, x, y, z) {
+    const box = { minX: 0, maxX: 0, minY: 0, maxY: 0, minZ: 0, maxZ: 0 };
+    collideBoxes.push(box);
+    writeLocalCollideBox(box, parent, w, h, d, x, y, z);
+    return box;
+  }
+
+  function writeLocalCollideBox(box, parent, w, h, d, x, y, z) {
     const wx = parent.position.x + x;
     const wy = parent.position.y + y;
     const wz = parent.position.z + z;
-    const box = {
-      minX: wx - w / 2,
-      maxX: wx + w / 2,
-      minY: wy - h / 2,
-      maxY: wy + h / 2,
-      minZ: wz - d / 2,
-      maxZ: wz + d / 2
-    };
-    collideBoxes.push(box);
+    box.minX = wx - w / 2;
+    box.maxX = wx + w / 2;
+    box.minY = wy - h / 2;
+    box.maxY = wy + h / 2;
+    box.minZ = wz - d / 2;
+    box.maxZ = wz + d / 2;
+  }
+
+  function padAxesForWorldBox(world) {
+    const sx = world.max.x - world.min.x;
+    const sz = world.max.z - world.min.z;
+    // Fat pad on the thin axis so a 0.18 wall cannot be tunneled at run speed.
+    // Tiny pad on the long axis so the door hole stays a doorway, not a garage.
+    if (sx > sz * 2.2) return { padX: 0.03, padZ: 0.16 };
+    if (sz > sx * 2.2) return { padX: 0.16, padZ: 0.03 };
+    return { padX: 0.1, padZ: 0.1 };
+  }
+
+  function syncCollideFromMesh(mesh, padXZ) {
+    if (!mesh || !mesh.isMesh) return null;
+    mesh.updateWorldMatrix(true, false);
+    const world = new THREE.Box3().setFromObject(mesh);
+    if (!isFinite(world.min.x) || world.isEmpty()) return mesh.userData.collideBox || null;
+    let padX, padZ;
+    if (typeof padXZ === 'number') {
+      padX = padZ = padXZ;
+    } else {
+      const p = padAxesForWorldBox(world);
+      padX = p.padX;
+      padZ = p.padZ;
+    }
+    let box = mesh.userData.collideBox;
+    if (!box) {
+      box = { minX: 0, maxX: 0, minY: 0, maxY: 0, minZ: 0, maxZ: 0 };
+      mesh.userData.collideBox = box;
+      collideBoxes.push(box);
+    }
+    box.minX = world.min.x - padX;
+    box.maxX = world.max.x + padX;
+    box.minY = world.min.y;
+    box.maxY = world.max.y + 0.12;
+    box.minZ = world.min.z - padZ;
+    box.maxZ = world.max.z + padZ;
     return box;
+  }
+
+  function rebuildSolidCollision(root, padXZ) {
+    if (!root) return;
+    root.updateWorldMatrix(true, true);
+    root.traverse((obj) => {
+      if (!obj.isMesh) return;
+      const label = obj.userData.buildLabel || '';
+      const solid = obj.userData.solidShell ||
+        label === 'wall' || label === 'interior wall' || label === 'wood wall' || label === 'window';
+      if (solid) syncCollideFromMesh(obj, padXZ);
+    });
   }
 
   function addWorldSolid(w, h, d, x, y, z) {
@@ -1260,11 +1321,21 @@
     });
   }
 
-  function addFrontWallWithDoor(house, color, width, height, thick, y, z, doorW, label) {
-    const side = (width - doorW) / 2;
-    const cx = doorW / 2 + side / 2;
-    addRemovableWall(house, color, side, height, thick, -cx, y, z, label);
-    addRemovableWall(house, color, side, height, thick, cx, y, z, label);
+  function addSolidShellMesh(mesh, padXZ) {
+    mesh.userData.solidShell = true;
+    syncCollideFromMesh(mesh, padXZ == null ? 0.06 : padXZ);
+  }
+
+  // Door hole is only as wide as the swung-open door, and lined up with it.
+  function addFrontWallWithDoor(house, color, width, height, thick, y, z, doorW, doorX, label) {
+    const leftEnd = -width / 2;
+    const rightEnd = width / 2;
+    const gapL = doorX - doorW / 2;
+    const gapR = doorX + doorW / 2;
+    const leftW = Math.max(0.2, gapL - leftEnd);
+    const rightW = Math.max(0.2, rightEnd - gapR);
+    addRemovableWall(house, color, leftW, height, thick, leftEnd + leftW / 2, y, z, label);
+    addRemovableWall(house, color, rightW, height, thick, gapR + rightW / 2, y, z, label);
   }
 
   function addWalkable(parent, w, d, x, y, z) {
@@ -1291,7 +1362,7 @@
   }
 
   function blockedAt(x, y, z) {
-    const r = 0.32;
+    const r = 0.36;
     const bodyY = y + 0.75;
     for (let i = 0; i < collideBoxes.length; i++) {
       const b = collideBoxes[i];
@@ -1341,17 +1412,23 @@
 
   function tryMoveBody(mesh, dx, dz, skipWalls) {
     if (!mesh) return false;
-    const y = bodyFeetY(mesh);
+    const dist = Math.hypot(dx, dz);
+    const steps = Math.max(1, Math.ceil(dist / 0.045));
     let hitPerson = false;
-    const nx = mesh.position.x + dx;
-    const nz = mesh.position.z + dz;
-    if (skipWalls || !blockedAt(nx, y, mesh.position.z)) {
-      if (!bodyBlockedAt(nx, y, mesh.position.z, mesh)) mesh.position.x = nx;
-      else hitPerson = true;
-    }
-    if (skipWalls || !blockedAt(mesh.position.x, y, nz)) {
-      if (!bodyBlockedAt(mesh.position.x, y, nz, mesh)) mesh.position.z = nz;
-      else hitPerson = true;
+    for (let i = 0; i < steps; i++) {
+      const y = bodyFeetY(mesh);
+      const sx = dx / steps;
+      const sz = dz / steps;
+      const nx = mesh.position.x + sx;
+      const nz = mesh.position.z + sz;
+      if (skipWalls || !blockedAt(nx, y, mesh.position.z)) {
+        if (!bodyBlockedAt(nx, y, mesh.position.z, mesh)) mesh.position.x = nx;
+        else hitPerson = true;
+      }
+      if (skipWalls || !blockedAt(mesh.position.x, y, nz)) {
+        if (!bodyBlockedAt(mesh.position.x, y, nz, mesh)) mesh.position.z = nz;
+        else hitPerson = true;
+      }
     }
     return hitPerson;
   }
@@ -1574,11 +1651,12 @@
       minX: house.position.x - halfW,
       maxX: house.position.x + halfW,
       minZ: house.position.z - halfD,
-      maxZ: house.position.z + halfD + 0.45,
+      maxZ: doorWorld.z - 0.22,
+      doorHalf: (bounds && bounds.doorHalf) || 0.58,
       camMinX: house.position.x - halfW + 0.45,
       camMaxX: house.position.x + halfW - 0.45,
       camMinZ: house.position.z - halfD + 0.4,
-      camMaxZ: house.position.z + halfD - 0.2
+      camMaxZ: doorWorld.z - 0.45
     });
     const label = makeLabelSprite('🏠 Walk inside!');
     label.position.set(doorLocal.x, 3.2, doorLocal.z + 0.2);
@@ -1602,10 +1680,14 @@
     if (!player) return null;
     for (let i = 0; i < enterableHouses.length; i++) {
       const h = enterableHouses[i];
-      if (player.position.x >= h.minX && player.position.x <= h.maxX &&
-          player.position.z >= h.minZ && player.position.z <= h.maxZ) {
-        return h;
-      }
+      if (player.position.x < h.minX || player.position.x > h.maxX) continue;
+      if (player.position.z < h.minZ || player.position.z > h.maxZ) continue;
+      // Still outside until you pass the door — keeps front walls visible from the yard.
+      if (h.door && player.position.z > h.door.z - 0.22) continue;
+      // A hole in a front WALL is not a door. Only the doorway counts while still at the facade.
+      if (h.door && player.position.z > h.door.z - 1.2 &&
+          Math.abs(player.position.x - h.door.x) > (h.doorHalf || 0.58) + 0.22) continue;
+      return h;
     }
     return null;
   }
@@ -1721,14 +1803,14 @@
     house.add(createBox(0x7CB342, 10, 0.08, 9, 0, 0.02, 0));
     house.add(createBox(0x90A4AE, 1.2, 0.06, 4, 0, 0.06, 3));
     house.add(createBox(0xC8B59A, 7.2, 0.2, 5.5, 0, 0.12, 0));
-    addRemovableWall(house, 0xF5F5F5, 7, 2.4, 0.18, 0, 1.35, -2.5, 'wall');
-    addFrontWallWithDoor(house, 0xF5F5F5, 7, 2.4, 0.18, 1.35, 2.5, 1.42, 'wall');
-    addRemovableWall(house, 0xF5F5F5, 0.18, 2.4, 5, -3.4, 1.35, 0, 'wall');
-    addRemovableWall(house, 0xF5F5F5, 0.18, 2.4, 5, 3.4, 1.35, 0, 'wall');
-    addRemovableWall(house, 0xFAFAFA, 7, 2.2, 0.18, 0, 3.5, -2.5, 'wall');
-    addRemovableWall(house, 0xFAFAFA, 7, 2.2, 0.18, 0, 3.5, 2.5, 'wall');
-    addRemovableWall(house, 0xFAFAFA, 0.18, 2.2, 5, -3.4, 3.5, 0, 'wall');
-    addRemovableWall(house, 0xFAFAFA, 0.18, 2.2, 5, 3.4, 3.5, 0, 'wall');
+    addRemovableWall(house, 0xF5F5F5, 7, 2.4, 0.32, 0, 1.35, -2.5, 'wall');
+    addFrontWallWithDoor(house, 0xF5F5F5, 7, 2.4, 0.32, 1.35, 2.5, 1.16, -0.72, 'wall');
+    addRemovableWall(house, 0xF5F5F5, 0.32, 2.4, 5, -3.4, 1.35, 0, 'wall');
+    addRemovableWall(house, 0xF5F5F5, 0.32, 2.4, 5, 3.4, 1.35, 0, 'wall');
+    addRemovableWall(house, 0xFAFAFA, 7, 2.2, 0.32, 0, 3.5, -2.5, 'wall');
+    addRemovableWall(house, 0xFAFAFA, 7, 2.2, 0.32, 0, 3.5, 2.5, 'wall');
+    addRemovableWall(house, 0xFAFAFA, 0.32, 2.2, 5, -3.4, 3.5, 0, 'wall');
+    addRemovableWall(house, 0xFAFAFA, 0.32, 2.2, 5, 3.4, 3.5, 0, 'wall');
     const door = createBox(0xECEFF1, 0.9, 2.0, 0.08, -0.72, 1.1, 2.85);
     door.rotation.y = 1.05;
     markRemovable(door, 'door');
@@ -1774,7 +1856,8 @@
     addInteriorRooms(house, 6.5, 4.5);
     addStairsAndUpperFloor(house, 6.6, 4.8, 2.62, 2.15);
     scene.add(house);
-    registerEnterableHouse(house, 'Free House 1', { x: 0, y: 0, z: 2.55 }, { x: 0, z: 1.4 }, { halfW: 3.25, halfD: 2.35 });
+    rebuildSolidCollision(house);
+    registerEnterableHouse(house, 'Free House 1', { x: -0.72, y: 0, z: 2.55 }, { x: -0.72, z: 1.4 }, { halfW: 3.25, halfD: 2.35, doorHalf: 0.58 });
   }
 
   // House 2: Modern villa with pool, pergola, BBQ
@@ -1784,10 +1867,10 @@
     house.add(createBox(0x78909C, 9, 0.25, 7, 0, 0.12, 0));
     house.add(createBox(0x90A4AE, 1.2, 0.15, 1.5, 0, 0.2, 3.5));
     house.add(createBox(0x6D4C41, 0.25, 0.7, 0.2, -3.8, 0.5, 3.2));
-    addRemovableWall(house, 0x455A64, 8, 2.6, 0.2, 0, 1.5, -3, 'wall');
-    addFrontWallWithDoor(house, 0x455A64, 8, 2.6, 0.2, 1.5, 3, 1.46, 'wall');
-    addRemovableWall(house, 0x455A64, 0.2, 2.6, 6, -3.9, 1.5, 0, 'wall');
-    addRemovableWall(house, 0x455A64, 0.2, 2.6, 6, 3.9, 1.5, 0, 'wall');
+    addRemovableWall(house, 0x455A64, 8, 2.6, 0.32, 0, 1.5, -3, 'wall');
+    addFrontWallWithDoor(house, 0x455A64, 8, 2.6, 0.32, 1.5, 3, 1.18, -0.78, 'wall');
+    addRemovableWall(house, 0x455A64, 0.32, 2.6, 6, -3.9, 1.5, 0, 'wall');
+    addRemovableWall(house, 0x455A64, 0.32, 2.6, 6, 3.9, 1.5, 0, 'wall');
     addRemovableWall(house, 0xD7CCC8, 2.5, 2.4, 0.15, -2.5, 1.45, 3.05, 'wood wall');
     addRemovableWall(house, 0xD7CCC8, 2.5, 2.4, 0.15, 2.5, 4.2, 3.05, 'wood wall');
     [[-2.2, 1.4], [2.2, 1.4]].forEach((p) => {
@@ -1800,9 +1883,10 @@
     door.rotation.y = 1.05;
     markRemovable(door, 'door');
     house.add(door);
-    addRemovableWall(house, 0x546E7A, 8, 2.4, 0.2, 0, 4.0, -3, 'wall');
-    addRemovableWall(house, 0x546E7A, 0.2, 2.4, 6, -3.9, 4.0, 0, 'wall');
-    addRemovableWall(house, 0x546E7A, 0.2, 2.4, 6, 3.9, 4.0, 0, 'wall');
+    addRemovableWall(house, 0x546E7A, 8, 2.4, 0.32, 0, 4.0, -3, 'wall');
+    addRemovableWall(house, 0x546E7A, 8, 2.4, 0.32, 0, 4.0, 3, 'wall');
+    addRemovableWall(house, 0x546E7A, 0.32, 2.4, 6, -3.9, 4.0, 0, 'wall');
+    addRemovableWall(house, 0x546E7A, 0.32, 2.4, 6, 3.9, 4.0, 0, 'wall');
     house.add(createBox(0xECEFF1, 4, 0.15, 3.5, -1.5, 2.95, 1.5));
     addWalkable(house, 4, 3.5, -1.5, 3.05, 1.5);
     const pool = createBox(0x4FC3F7, 2.2, 0.35, 1.6, -2.2, 2.9, 1.2);
@@ -1830,7 +1914,8 @@
     addInteriorRooms(house, 7.5, 5.5);
     addStairsAndUpperFloor(house, 7.6, 5.6, 2.78, 2.45);
     scene.add(house);
-    registerEnterableHouse(house, 'Free House 2', { x: 0, y: 0, z: 3.1 }, { x: 0, z: 1.8 }, { halfW: 3.7, halfD: 2.85 });
+    rebuildSolidCollision(house);
+    registerEnterableHouse(house, 'Free House 2', { x: -0.78, y: 0, z: 3.1 }, { x: -0.78, z: 1.8 }, { halfW: 3.7, halfD: 2.85, doorHalf: 0.59 });
   }
 
   // House 3: Pink cute cafe house with bows & flowers
@@ -1839,17 +1924,17 @@
     house.position.set(x, y, z);
     house.add(createBox(0xB0BEC5, 9, 0.12, 8, 0, 0.04, 0));
     house.add(createBox(0xFFF3E0, 7, 0.2, 5.5, 0, 0.15, 0));
-    addRemovableWall(house, 0xFFF8E1, 7, 2.5, 0.18, 0, 1.4, -2.5, 'wall');
-    addFrontWallWithDoor(house, 0xFFF8E1, 7, 2.5, 0.18, 1.4, 2.5, 1.42, 'wall');
-    addRemovableWall(house, 0xFFF8E1, 0.18, 2.5, 5, -3.4, 1.4, 0, 'wall');
-    addRemovableWall(house, 0xFFF8E1, 0.18, 2.5, 5, 3.4, 1.4, 0, 'wall');
+    addRemovableWall(house, 0xFFF8E1, 7, 2.5, 0.32, 0, 1.4, -2.5, 'wall');
+    addFrontWallWithDoor(house, 0xFFF8E1, 7, 2.5, 0.32, 1.4, 2.5, 1.16, -0.74, 'wall');
+    addRemovableWall(house, 0xFFF8E1, 0.32, 2.5, 5, -3.4, 1.4, 0, 'wall');
+    addRemovableWall(house, 0xFFF8E1, 0.32, 2.5, 5, 3.4, 1.4, 0, 'wall');
     [[-3.5, -2.5], [3.5, -2.5], [-3.5, 2.5], [3.5, 2.5]].forEach((p) => {
       house.add(createBox(0x81D4FA, 0.25, 5.2, 0.25, p[0], 2.7, p[1]));
     });
-    addRemovableWall(house, 0xFFFDE7, 7, 2.3, 0.18, 0, 3.7, -2.5, 'wall');
-    addRemovableWall(house, 0xFFFDE7, 7, 2.3, 0.18, 0, 3.7, 2.5, 'wall');
-    addRemovableWall(house, 0xFFFDE7, 0.18, 2.3, 5, -3.4, 3.7, 0, 'wall');
-    addRemovableWall(house, 0xFFFDE7, 0.18, 2.3, 5, 3.4, 3.7, 0, 'wall');
+    addRemovableWall(house, 0xFFFDE7, 7, 2.3, 0.32, 0, 3.7, -2.5, 'wall');
+    addRemovableWall(house, 0xFFFDE7, 7, 2.3, 0.32, 0, 3.7, 2.5, 'wall');
+    addRemovableWall(house, 0xFFFDE7, 0.32, 2.3, 5, -3.4, 3.7, 0, 'wall');
+    addRemovableWall(house, 0xFFFDE7, 0.32, 2.3, 5, 3.4, 3.7, 0, 'wall');
     const door = createBox(0xF48FB1, 0.95, 2.0, 0.08, -0.74, 1.15, 2.85);
     door.rotation.y = 1.05;
     markRemovable(door, 'door');
@@ -1903,29 +1988,32 @@
     addInteriorRooms(house, 6.5, 4.5);
     addStairsAndUpperFloor(house, 6.6, 4.8, 2.62, 2.15);
     scene.add(house);
-    registerEnterableHouse(house, 'Free House 3', { x: 0, y: 0, z: 2.55 }, { x: 0, z: 1.4 }, { halfW: 3.25, halfD: 2.35 });
+    rebuildSolidCollision(house);
+    registerEnterableHouse(house, 'Free House 3', { x: -0.74, y: 0, z: 2.55 }, { x: -0.74, z: 1.4 }, { halfW: 3.25, halfD: 2.35, doorHalf: 0.58 });
   }
 
   function buildBarn(x, y, z) {
     const barn = new THREE.Group();
-    barn.add(createBox(0xDC143C, 6, 4, 5, 0, 2, 0));
+    const body = createBox(0xDC143C, 6, 4, 5, 0, 2, 0);
+    barn.add(body);
     barn.add(createBox(0x8B0000, 7, 0.3, 6, 0, 4.15, 0));
     barn.add(createBox(0xFFFFFF, 2, 2.5, 0.1, 0, 1.25, 2.55));
     barn.add(createBox(0x87CEEB, 1, 1, 0.1, -1.5, 2.5, 2.55));
     barn.add(createBox(0x87CEEB, 1, 1, 0.1, 1.5, 2.5, 2.55));
     barn.position.set(x, y, z);
-    addWorldSolid(6, 4, 5, x, y + 2, z);
     scene.add(barn);
+    addSolidShellMesh(body);
   }
 
   function buildCottage(x, y, z) {
     const g = new THREE.Group();
-    g.add(createBox(0xFFE0B2, 4, 2.2, 3.5, 0, 1.1, 0));
+    const body = createBox(0xFFE0B2, 4, 2.2, 3.5, 0, 1.1, 0);
+    g.add(body);
     g.add(createBox(0x6D4C41, 4.5, 0.2, 4, 0, 2.3, 0));
     g.add(createBox(0x5D4037, 0.9, 1.6, 0.1, 0, 0.9, 1.8));
     g.position.set(x, y, z);
-    addWorldSolid(4, 2.2, 3.5, x, y + 1.1, z);
     scene.add(g);
+    addSolidShellMesh(body);
   }
 
   function buildTree(x, z) {
@@ -3010,10 +3098,47 @@
         $('game-ui').dataset.chars = String(worldCharacters.length);
         $('game-ui').dataset.bump = bodyBlockedAt(player.position.x, player.position.y, player.position.z, player) ? '1' : '0';
         $('game-ui').dataset.cam = camera.position.x.toFixed(1) + ',' + camera.position.y.toFixed(1) + ',' + camera.position.z.toFixed(1);
+        $('game-ui').dataset.walls = String(collideBoxes.length);
       }
       renderer.render(scene, camera);
     }
   }
+
+  window.__eliWall = {
+    pos() {
+      if (!player) return null;
+      return {
+        x: player.position.x,
+        y: player.position.y,
+        z: player.position.z,
+        inside: insideHouse ? insideHouse.name : '',
+        boxes: collideBoxes.length
+      };
+    },
+    put(x, y, z) {
+      if (!player) return null;
+      player.position.set(x, y || 0, z);
+      player.userData.jumpVel = 0;
+      return window.__eliWall.pos();
+    },
+    blocked(x, y, z) {
+      return blockedAt(x, y == null ? 0 : y, z);
+    },
+    step(dx, dz) {
+      if (!player) return null;
+      tryMoveBody(player, dx, dz);
+      return window.__eliWall.pos();
+    },
+    boxesNear(x, z, r) {
+      r = r || 2;
+      return collideBoxes.filter((b) => !(x + r < b.minX || x - r > b.maxX || z + r < b.minZ || z - r > b.maxZ));
+    },
+    aim(angle) {
+      cameraAngle = angle;
+      if (player) player.rotation.y = angle;
+      return cameraAngle;
+    }
+  };
 
   window.addEventListener('resize', () => {
     const container = $('canvas-container');
