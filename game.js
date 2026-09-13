@@ -145,6 +145,12 @@
   let isTouchDevice = false;
   let enterableHouses = [];
   let insideHouse = null;
+  let walkables = [];
+  let collideBoxes = [];
+  let clippedWalls = [];
+  let furnitureHold = null;
+  let furnitureTapPick = null;
+  const MOVABLE_FURNITURE = { bed: true, table: true, chair: true, sofa: true };
   let cameraAngle = 0;
   let cameraHeight = 6;
   let cameraDistance = 10;
@@ -984,6 +990,11 @@
     groundMesh = null;
     enterableHouses = [];
     insideHouse = null;
+    walkables = [];
+    collideBoxes = [];
+    clippedWalls = [];
+    furnitureHold = null;
+    furnitureTapPick = null;
   }
 
   function addLights() {
@@ -1015,7 +1026,7 @@
     $('btn-build-toggle').textContent = 'Build Mode';
     if (isTouchDevice) {
       $('touch-controls').classList.add('active');
-      $('hud-tip').textContent = 'Joystick · Use at door to enter houses · Build inside';
+      $('hud-tip').textContent = 'Walk in a door to go inside · Use helps too · Build to decorate';
       setTimeout(() => {
         const hint = $('look-hint');
         if (hint) hint.style.display = 'none';
@@ -1205,12 +1216,120 @@
     const mesh = createBox(color, w, h, d, x, y, z);
     markRemovable(mesh, label || 'wall');
     parent.add(mesh);
+    const solid = !label || label === 'wall' || label === 'interior wall' || label === 'wood wall' || label === 'window';
+    if (solid) mesh.userData.collideBox = addCollisionBox(parent, w, h, d, x, y, z);
     return mesh;
+  }
+
+  function addCollisionBox(parent, w, h, d, x, y, z) {
+    const wx = parent.position.x + x;
+    const wy = parent.position.y + y;
+    const wz = parent.position.z + z;
+    const box = {
+      minX: wx - w / 2,
+      maxX: wx + w / 2,
+      minY: wy - h / 2,
+      maxY: wy + h / 2,
+      minZ: wz - d / 2,
+      maxZ: wz + d / 2
+    };
+    collideBoxes.push(box);
+    return box;
+  }
+
+  function addWalkable(parent, w, d, x, y, z) {
+    const wx = parent.position.x + x;
+    const wz = parent.position.z + z;
+    walkables.push({
+      minX: wx - w / 2 - 0.08,
+      maxX: wx + w / 2 + 0.08,
+      minZ: wz - d / 2 - 0.08,
+      maxZ: wz + d / 2 + 0.08,
+      y: parent.position.y + y
+    });
+  }
+
+  function getWalkHeight(x, z, fromY) {
+    let best = 0;
+    const maxReach = (fromY || 0) + 0.55;
+    for (let i = 0; i < walkables.length; i++) {
+      const w = walkables[i];
+      if (x < w.minX || x > w.maxX || z < w.minZ || z > w.maxZ) continue;
+      if (w.y <= maxReach && w.y > best) best = w.y;
+    }
+    return best;
+  }
+
+  function blockedAt(x, y, z) {
+    const r = 0.32;
+    const bodyY = y + 0.75;
+    for (let i = 0; i < collideBoxes.length; i++) {
+      const b = collideBoxes[i];
+      if (x + r < b.minX || x - r > b.maxX) continue;
+      if (z + r < b.minZ || z - r > b.maxZ) continue;
+      if (bodyY < b.minY || y + 0.12 > b.maxY) continue;
+      return true;
+    }
+    return false;
+  }
+
+  function addFloorAroundHole(house, cx, cz, w, d, y, hole, color) {
+    const minX = cx - w / 2;
+    const maxX = cx + w / 2;
+    const minZ = cz - d / 2;
+    const maxZ = cz + d / 2;
+    const hx0 = hole.x - hole.w / 2;
+    const hx1 = hole.x + hole.w / 2;
+    const hz0 = hole.z - hole.d / 2;
+    const hz1 = hole.z + hole.d / 2;
+
+    function slab(x0, x1, z0, z1) {
+      if (x1 - x0 < 0.25 || z1 - z0 < 0.25) return;
+      const sw = x1 - x0;
+      const sd = z1 - z0;
+      const sx = (x0 + x1) / 2;
+      const sz = (z0 + z1) / 2;
+      const mesh = createBox(color, sw, 0.1, sd, sx, y, sz);
+      markRemovable(mesh, 'floor');
+      house.add(mesh);
+      addWalkable(house, sw, sd, sx, y + 0.06, sz);
+    }
+
+    slab(minX, hx0, minZ, maxZ);
+    slab(hx1, maxX, minZ, maxZ);
+    slab(hx0, hx1, minZ, hz0);
+    slab(hx0, hx1, hz1, maxZ);
+  }
+
+  function addStairsAndUpperFloor(house, width, depth, floorY, stairX) {
+    const steps = 7;
+    const stepH = floorY / steps;
+    const stepD = 0.4;
+    const stepW = 1.35;
+    const startZ = depth * 0.28;
+    for (let i = 0; i < steps; i++) {
+      const top = (i + 1) * stepH;
+      const z = startZ - i * stepD;
+      const step = createBox(0xD7B899, stepW, Math.max(0.12, stepH), stepD, stairX, top - stepH / 2, z);
+      markRemovable(step, 'stairs');
+      house.add(step);
+      addWalkable(house, stepW, stepD + 0.1, stairX, top, z);
+    }
+    const hole = {
+      x: stairX,
+      z: startZ - ((steps - 1) * stepD) / 2,
+      w: stepW + 0.3,
+      d: steps * stepD + 0.3
+    };
+    addFloorAroundHole(house, 0, 0, width, depth, floorY, hole, 0xE8D5B5);
+    const railX = hole.x - hole.w / 2;
+    house.add(createBox(0x8D6E63, 0.07, 0.55, hole.d, railX, floorY + 0.35, hole.z));
   }
 
   function addInteriorRooms(house, width, depth) {
     // Dollhouse interior walls like her wallpaper screenshot — removable
-    addRemovableWall(house, 0xFFF8E7, 0.12, 2.2, depth * 0.85, 0, 1.2, 0, 'interior wall');
+    addRemovableWall(house, 0xFFF8E7, 0.12, 2.2, depth * 0.32, 0, 1.2, -depth * 0.28, 'interior wall');
+    addRemovableWall(house, 0xFFF8E7, 0.12, 2.2, depth * 0.32, 0, 1.2, depth * 0.28, 'interior wall');
     for (let i = 0; i < 5; i++) {
       const stripe = createBox(i % 2 === 0 ? 0xF5E6C8 : 0xE8D5A3, 0.04, 2.0, depth * 0.8, -width * 0.22, 1.15, 0);
       markRemovable(stripe, 'wallpaper');
@@ -1232,7 +1351,7 @@
     house.add(carpet);
   }
 
-  function registerEnterableHouse(house, name, doorLocal, insideLocal, frontWallZs) {
+  function registerEnterableHouse(house, name, doorLocal, insideLocal, bounds) {
     // doorLocal / insideLocal are offsets from house.position
     const doorWorld = {
       x: house.position.x + doorLocal.x,
@@ -1244,26 +1363,22 @@
       y: 0,
       z: house.position.z + insideLocal.z
     };
-    const frontWalls = [];
-    house.traverse((obj) => {
-      if (!obj.isMesh || !obj.userData.removable) return;
-      // front-facing walls roughly at positive local Z near door
-      if (Math.abs(obj.position.z - (frontWallZs || 2.5)) < 0.4 && (obj.userData.buildLabel === 'wall' || obj.userData.buildLabel === 'door' || obj.userData.buildLabel === 'window')) {
-        frontWalls.push(obj);
-      }
-    });
+    const halfW = (bounds && bounds.halfW) || 3.2;
+    const halfD = (bounds && bounds.halfD) || 2.35;
     enterableHouses.push({
       name,
       house,
       door: doorWorld,
       inside: insideWorld,
-      outside: { x: doorWorld.x, y: 0, z: doorWorld.z + 2.2 },
-      frontWalls
+      outside: { x: doorWorld.x, y: 0, z: doorWorld.z + 1.7 },
+      minX: house.position.x - halfW,
+      maxX: house.position.x + halfW,
+      minZ: house.position.z - halfD,
+      maxZ: house.position.z + halfD
     });
-    // Floating enter hint
-    const label = makeLabelSprite('🏠 ' + name + ' · Use to enter');
+    const label = makeLabelSprite('🏠 Walk inside!');
     label.position.set(doorLocal.x, 3.2, doorLocal.z + 0.2);
-    label.scale.set(2.8, 0.55, 1);
+    label.scale.set(2.6, 0.5, 1);
     house.add(label);
   }
 
@@ -1271,44 +1386,121 @@
     if (!player) return null;
     let best = null, bestD = maxDist;
     enterableHouses.forEach((h) => {
-      const target = insideHouse === h ? h.inside : h.door;
-      const dx = target.x - player.position.x;
-      const dz = target.z - player.position.z;
+      const dx = h.door.x - player.position.x;
+      const dz = h.door.z - player.position.z;
       const d = Math.sqrt(dx * dx + dz * dz);
       if (d < bestD) { bestD = d; best = h; }
     });
     return best;
   }
 
-  function setHouseCutaway(houseEntry, cutaway) {
-    if (!houseEntry) return;
-    houseEntry.frontWalls.forEach((w) => {
-      if (!w.material) return;
-      w.visible = !cutaway;
+  function houseAroundPlayer() {
+    if (!player) return null;
+    for (let i = 0; i < enterableHouses.length; i++) {
+      const h = enterableHouses[i];
+      if (player.position.x >= h.minX && player.position.x <= h.maxX &&
+          player.position.z >= h.minZ && player.position.z <= h.maxZ) {
+        return h;
+      }
+    }
+    return null;
+  }
+
+  function restoreClippedWalls() {
+    for (let i = 0; i < clippedWalls.length; i++) {
+      if (clippedWalls[i]) clippedWalls[i].visible = true;
+    }
+    clippedWalls = [];
+  }
+
+  function isClipWall(obj) {
+    if (!obj || !obj.isMesh) return false;
+    const label = obj.userData.buildLabel || '';
+    return label === 'wall' || label === 'window' || label === 'wood wall' || label === 'interior wall';
+  }
+
+  function updateBlockingWallClip() {
+    restoreClippedWalls();
+    if (!player || !insideHouse || !insideHouse.house) return;
+    const origin = camera.position.clone();
+    const dest = player.position.clone();
+    dest.y += 1.15;
+    const dir = dest.sub(origin);
+    const dist = dir.length();
+    if (dist < 0.25) return;
+    dir.normalize();
+    raycaster.set(origin, dir);
+    const walls = [];
+    insideHouse.house.traverse((obj) => {
+      if (isClipWall(obj) && obj.visible) walls.push(obj);
     });
+    if (!walls.length) return;
+    const hits = raycaster.intersectObjects(walls, false);
+    if (!hits.length) return;
+    const first = hits[0];
+    if (first.distance >= dist - 0.25) return;
+    first.object.visible = false;
+    clippedWalls.push(first.object);
+    for (let i = 1; i < hits.length; i++) {
+      if (hits[i].distance >= dist - 0.25) break;
+      if (Math.abs(hits[i].distance - first.distance) < 0.4) {
+        hits[i].object.visible = false;
+        clippedWalls.push(hits[i].object);
+      }
+    }
+  }
+
+  function setInsideHouse(h, viaWalk) {
+    insideHouse = h;
+    if (!h) return;
+    $('hud-tip').textContent = viaWalk
+      ? 'Inside! Walk out the door to leave · Stairs go up'
+      : 'Inside! Walk out the door, or Use/E at the door';
+  }
+
+  function setOutsideHouseTips() {
+    $('hud-tip').textContent = isTouchDevice
+      ? 'Walk in a door to go inside · Use helps too'
+      : 'Walk in a door to go inside · E helps too · Build inside!';
+  }
+
+  function updateHouseWalk() {
+    if (!player || mountedHorse) {
+      if (!player) restoreClippedWalls();
+      return;
+    }
+    const h = houseAroundPlayer();
+    if (h && insideHouse !== h) {
+      insideHouse = h;
+      toast('You walked in ' + h.name + '!');
+      setInsideHouse(h, true);
+    } else if (!h && insideHouse) {
+      const left = insideHouse;
+      insideHouse = null;
+      restoreClippedWalls();
+      toast('You walked out of ' + left.name);
+      setOutsideHouseTips();
+    }
+    updateBlockingWallClip();
   }
 
   function tryEnterOrExitHouse() {
-    const h = nearestEnterableHouse(insideHouse ? 3.5 : 2.8);
+    const h = nearestEnterableHouse(2.6);
     if (!h) return false;
-    if (insideHouse === h) {
-      setHouseCutaway(h, false);
+    if (insideHouse === h || houseAroundPlayer() === h) {
       player.position.set(h.outside.x, 0, h.outside.z);
+      player.userData.jumpVel = 0;
       insideHouse = null;
+      restoreClippedWalls();
       toast('Left ' + h.name);
-      $('hud-tip').textContent = isTouchDevice
-        ? 'Joystick move · Drag to look · Use near door to enter'
-        : 'E near a house door to enter · Build inside!';
+      setOutsideHouseTips();
       return true;
     }
-    if (insideHouse && insideHouse !== h) {
-      setHouseCutaway(insideHouse, false);
-    }
-    setHouseCutaway(h, true);
-    player.position.set(h.inside.x, 0, h.inside.z);
-    insideHouse = h;
-    toast('Welcome inside ' + h.name + '! Build Mode works here ✨');
-    $('hud-tip').textContent = 'Inside! Build Mode to decorate · Use near door to exit';
+    const insideY = getWalkHeight(h.inside.x, h.inside.z, 0.2);
+    player.position.set(h.inside.x, insideY, h.inside.z);
+    player.userData.jumpVel = 0;
+    setInsideHouse(h, false);
+    toast('Popped inside ' + h.name + '! Walk out the door anytime');
     return true;
   }
 
@@ -1320,18 +1512,19 @@
     house.add(createBox(0x90A4AE, 1.2, 0.06, 4, 0, 0.06, 3));
     house.add(createBox(0xC8B59A, 7.2, 0.2, 5.5, 0, 0.12, 0));
     addRemovableWall(house, 0xF5F5F5, 7, 2.4, 0.18, 0, 1.35, -2.5, 'wall');
-    addRemovableWall(house, 0xF5F5F5, 7, 2.4, 0.18, 0, 1.35, 2.5, 'wall');
+    addRemovableWall(house, 0xF5F5F5, 2.7, 2.4, 0.18, -2.15, 1.35, 2.5, 'wall');
+    addRemovableWall(house, 0xF5F5F5, 2.7, 2.4, 0.18, 2.15, 1.35, 2.5, 'wall');
     addRemovableWall(house, 0xF5F5F5, 0.18, 2.4, 5, -3.4, 1.35, 0, 'wall');
-    addRemovableWall(house, 0xF5F5F5, 0.18, 2.4, 1.7, 3.4, 1.35, -1.5, 'wall');
-    addRemovableWall(house, 0xF5F5F5, 0.18, 2.4, 1.7, 3.4, 1.35, 1.5, 'wall');
+    addRemovableWall(house, 0xF5F5F5, 0.18, 2.4, 5, 3.4, 1.35, 0, 'wall');
     addRemovableWall(house, 0xFAFAFA, 7, 2.2, 0.18, 0, 3.5, -2.5, 'wall');
     addRemovableWall(house, 0xFAFAFA, 7, 2.2, 0.18, 0, 3.5, 2.5, 'wall');
     addRemovableWall(house, 0xFAFAFA, 0.18, 2.2, 5, -3.4, 3.5, 0, 'wall');
     addRemovableWall(house, 0xFAFAFA, 0.18, 2.2, 5, 3.4, 3.5, 0, 'wall');
-    const door = createBox(0xECEFF1, 0.12, 2.0, 1.0, 0, 1.1, 2.55);
+    const door = createBox(0xECEFF1, 0.9, 2.0, 0.08, -0.72, 1.1, 2.85);
+    door.rotation.y = 1.05;
     markRemovable(door, 'door');
     house.add(door);
-    house.add(createBox(0x212121, 0.06, 0.06, 0.06, 0.35, 1.1, 2.62));
+    house.add(createBox(0x212121, 0.06, 0.06, 0.06, -0.55, 1.1, 3.15));
     [[-1.8, 1.5], [1.8, 1.5]].forEach((p) => {
       const frame = createBox(0xF9A825, 1.1, 1.5, 0.1, p[0], p[1], 2.55);
       markRemovable(frame, 'window');
@@ -1370,8 +1563,9 @@
     house.add(createCylinder(0x6D4C41, 0.2, 0.28, 2.2, 4.5, 1.2, -3, 6));
     house.add(createBox(0x43A047, 2.2, 2.0, 2.2, 4.5, 2.8, -3));
     addInteriorRooms(house, 6.5, 4.5);
+    addStairsAndUpperFloor(house, 6.6, 4.8, 2.62, 2.15);
     scene.add(house);
-    registerEnterableHouse(house, 'Free House 1', { x: 0, y: 0, z: 2.55 }, { x: 0, z: 0 }, 2.5);
+    registerEnterableHouse(house, 'Free House 1', { x: 0, y: 0, z: 2.55 }, { x: 0, z: 1.4 }, { halfW: 3.25, halfD: 2.35 });
   }
 
   // House 2: Modern villa with pool, pergola, BBQ
@@ -1382,25 +1576,27 @@
     house.add(createBox(0x90A4AE, 1.2, 0.15, 1.5, 0, 0.2, 3.5));
     house.add(createBox(0x6D4C41, 0.25, 0.7, 0.2, -3.8, 0.5, 3.2));
     addRemovableWall(house, 0x455A64, 8, 2.6, 0.2, 0, 1.5, -3, 'wall');
-    addRemovableWall(house, 0x455A64, 8, 2.6, 0.2, 0, 1.5, 3, 'wall');
+    addRemovableWall(house, 0x455A64, 3.15, 2.6, 0.2, -2.425, 1.5, 3, 'wall');
+    addRemovableWall(house, 0x455A64, 3.15, 2.6, 0.2, 2.425, 1.5, 3, 'wall');
     addRemovableWall(house, 0x455A64, 0.2, 2.6, 6, -3.9, 1.5, 0, 'wall');
-    addRemovableWall(house, 0x455A64, 0.2, 2.6, 2, 3.9, 1.5, -1.8, 'wall');
-    addRemovableWall(house, 0x455A64, 0.2, 2.6, 2, 3.9, 1.5, 1.8, 'wall');
+    addRemovableWall(house, 0x455A64, 0.2, 2.6, 6, 3.9, 1.5, 0, 'wall');
     addRemovableWall(house, 0xD7CCC8, 2.5, 2.4, 0.15, -2.5, 1.45, 3.05, 'wood wall');
     addRemovableWall(house, 0xD7CCC8, 2.5, 2.4, 0.15, 2.5, 4.2, 3.05, 'wood wall');
-    [[-2.2, 1.4], [0, 1.4], [2.2, 1.4]].forEach((p) => {
+    [[-2.2, 1.4], [2.2, 1.4]].forEach((p) => {
       const win = createBox(0x212121, 1.1, 2.0, 0.08, p[0], p[1], 3.05);
       markRemovable(win, 'window');
       house.add(win);
       house.add(createBox(0x81D4FA, 0.95, 1.85, 0.05, p[0], p[1], 3.08));
     });
-    const door = createBox(0x8D6E63, 0.12, 2.1, 1.1, 0, 1.2, 3.1);
+    const door = createBox(0x8D6E63, 1.0, 2.1, 0.08, -0.78, 1.2, 3.4);
+    door.rotation.y = 1.05;
     markRemovable(door, 'door');
     house.add(door);
     addRemovableWall(house, 0x546E7A, 8, 2.4, 0.2, 0, 4.0, -3, 'wall');
     addRemovableWall(house, 0x546E7A, 0.2, 2.4, 6, -3.9, 4.0, 0, 'wall');
     addRemovableWall(house, 0x546E7A, 0.2, 2.4, 6, 3.9, 4.0, 0, 'wall');
     house.add(createBox(0xECEFF1, 4, 0.15, 3.5, -1.5, 2.95, 1.5));
+    addWalkable(house, 4, 3.5, -1.5, 3.05, 1.5);
     const pool = createBox(0x4FC3F7, 2.2, 0.35, 1.6, -2.2, 2.9, 1.2);
     markRemovable(pool, 'pool');
     house.add(pool);
@@ -1424,8 +1620,9 @@
     house.add(createBox(0xB0BEC5, 0.08, 1.2, 0.08, 2.5, 6.0, 1));
     house.add(createBox(0xB0BEC5, 0.8, 0.05, 0.05, 2.5, 6.55, 1));
     addInteriorRooms(house, 7.5, 5.5);
+    addStairsAndUpperFloor(house, 7.6, 5.6, 2.78, 2.45);
     scene.add(house);
-    registerEnterableHouse(house, 'Free House 2', { x: 0, y: 0, z: 3.1 }, { x: 0, z: 0 }, 3.0);
+    registerEnterableHouse(house, 'Free House 2', { x: 0, y: 0, z: 3.1 }, { x: 0, z: 1.8 }, { halfW: 3.7, halfD: 2.85 });
   }
 
   // House 3: Pink cute cafe house with bows & flowers
@@ -1435,10 +1632,10 @@
     house.add(createBox(0xB0BEC5, 9, 0.12, 8, 0, 0.04, 0));
     house.add(createBox(0xFFF3E0, 7, 0.2, 5.5, 0, 0.15, 0));
     addRemovableWall(house, 0xFFF8E1, 7, 2.5, 0.18, 0, 1.4, -2.5, 'wall');
-    addRemovableWall(house, 0xFFF8E1, 7, 2.5, 0.18, 0, 1.4, 2.5, 'wall');
+    addRemovableWall(house, 0xFFF8E1, 2.7, 2.5, 0.18, -2.15, 1.4, 2.5, 'wall');
+    addRemovableWall(house, 0xFFF8E1, 2.7, 2.5, 0.18, 2.15, 1.4, 2.5, 'wall');
     addRemovableWall(house, 0xFFF8E1, 0.18, 2.5, 5, -3.4, 1.4, 0, 'wall');
-    addRemovableWall(house, 0xFFF8E1, 0.18, 2.5, 1.7, 3.4, 1.4, -1.5, 'wall');
-    addRemovableWall(house, 0xFFF8E1, 0.18, 2.5, 1.7, 3.4, 1.4, 1.5, 'wall');
+    addRemovableWall(house, 0xFFF8E1, 0.18, 2.5, 5, 3.4, 1.4, 0, 'wall');
     [[-3.5, -2.5], [3.5, -2.5], [-3.5, 2.5], [3.5, 2.5]].forEach((p) => {
       house.add(createBox(0x81D4FA, 0.25, 5.2, 0.25, p[0], 2.7, p[1]));
     });
@@ -1446,7 +1643,8 @@
     addRemovableWall(house, 0xFFFDE7, 7, 2.3, 0.18, 0, 3.7, 2.5, 'wall');
     addRemovableWall(house, 0xFFFDE7, 0.18, 2.3, 5, -3.4, 3.7, 0, 'wall');
     addRemovableWall(house, 0xFFFDE7, 0.18, 2.3, 5, 3.4, 3.7, 0, 'wall');
-    const door = createBox(0xF48FB1, 0.12, 2.0, 1.1, 0, 1.15, 2.55);
+    const door = createBox(0xF48FB1, 0.95, 2.0, 0.08, -0.74, 1.15, 2.85);
+    door.rotation.y = 1.05;
     markRemovable(door, 'door');
     house.add(door);
     [[-2, 1.4], [2, 1.4]].forEach((p) => {
@@ -1496,8 +1694,9 @@
       house.add(createBox(0xF8BBD0, 0.1, 0.6, 0.1, 4.5, 0.35, -2 + i * 0.8));
     }
     addInteriorRooms(house, 6.5, 4.5);
+    addStairsAndUpperFloor(house, 6.6, 4.8, 2.62, 2.15);
     scene.add(house);
-    registerEnterableHouse(house, 'Free House 3', { x: 0, y: 0, z: 2.55 }, { x: 0, z: 0 }, 2.5);
+    registerEnterableHouse(house, 'Free House 3', { x: 0, y: 0, z: 2.55 }, { x: 0, z: 1.4 }, { halfW: 3.25, halfD: 2.35 });
   }
 
   function buildBarn(x, y, z) {
@@ -1782,7 +1981,9 @@
     const btn = $('btn-build-toggle');
     if (buildMode) {
       menu.classList.add('open');
-      indicator.textContent = isTouchDevice ? 'BUILD — tap place, Remove button deletes' : 'BUILD MODE — click add, right-click remove';
+      indicator.textContent = isTouchDevice
+        ? 'BUILD — tap place · tap or drag a sofa/table/chair/bed to move · Remove deletes'
+        : 'BUILD — click add · drag sofa/table/chair/bed to move · right-click Remove';
       indicator.style.background = 'rgba(155,89,182,0.85)';
       btn.textContent = 'Done Building';
       gameState = 'BUILD_MODE';
@@ -1799,6 +2000,7 @@
       removeBuildGhost();
       const rem = $('touch-remove');
       if (rem) rem.classList.remove('show');
+      clearFurniturePick();
     }
   }
 
@@ -1870,6 +2072,15 @@
         group.add(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.6, 0.1), mat(0x4ECDC4)));
         group.children[1].position.set(0, 0.3, -0.2);
         break;
+      case 'sofa':
+        group.add(new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.35, 0.85), mat(0xC48B9F)));
+        group.add(new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.7, 0.18), mat(0xB3778C)));
+        group.children[1].position.set(0, 0.35, -0.34);
+        group.add(new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.45, 0.85), mat(0xB3778C)));
+        group.children[2].position.set(-0.91, 0.2, 0);
+        group.add(new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.45, 0.85), mat(0xB3778C)));
+        group.children[3].position.set(0.91, 0.2, 0);
+        break;
       case 'fridge':
         group.add(new THREE.Mesh(new THREE.BoxGeometry(0.8, 2, 0.8), mat(0xC0C0C0)));
         break;
@@ -1939,9 +2150,11 @@
       const point = intersects[0].point;
       buildGhost.position.x = Math.round(point.x / 2) * 2;
       buildGhost.position.z = Math.round(point.z / 2) * 2;
-      buildGhost.position.y = 0;
+      const fromY = player ? player.position.y : 0;
+      const floorY = getWalkHeight(buildGhost.position.x, buildGhost.position.z, fromY);
+      buildGhost.position.y = floorY;
       if (selectedBuildItem === 'window' || selectedBuildItem === 'door' || selectedBuildItem === 'wall' || selectedBuildItem === 'wallStripe' || selectedBuildItem === 'wallFruit') {
-        buildGhost.position.y = 1.25;
+        buildGhost.position.y = floorY + 1.25;
       }
     }
   }
@@ -1974,6 +2187,9 @@
     if (mesh.userData.removable || root.userData.removable || root.userData.buildType) {
       const toRemove = mesh.userData.rootObject || (mesh.userData.removable ? mesh : root);
       // If it's a child wall of a house, remove just that mesh
+      if (toRemove.userData.collideBox) {
+        collideBoxes = collideBoxes.filter((b) => b !== toRemove.userData.collideBox);
+      }
       if (toRemove.parent && toRemove.parent !== scene && toRemove.userData.removable && !toRemove.userData.buildType) {
         toRemove.parent.remove(toRemove);
         removableParts = removableParts.filter((p) => p !== toRemove);
@@ -1985,6 +2201,64 @@
         toast('Removed ' + (toRemove.userData.buildLabel || toRemove.userData.buildType || 'piece') + '!');
       }
     }
+  }
+
+  function isMovableFurniture(obj) {
+    return !!(obj && MOVABLE_FURNITURE[obj.userData.buildType]);
+  }
+
+  function findFurnitureAtPointer() {
+    mouseVector.x = (mouse.x / window.innerWidth) * 2 - 1;
+    mouseVector.y = -(mouse.y / window.innerHeight) * 2 + 1;
+    raycaster.setFromCamera(mouseVector, camera);
+    const targets = [];
+    placedObjects.forEach((obj) => {
+      if (!isMovableFurniture(obj)) return;
+      obj.traverse((c) => {
+        if (c.isMesh) targets.push(c);
+      });
+    });
+    if (!targets.length) return null;
+    const hits = raycaster.intersectObjects(targets, true);
+    if (!hits.length) return null;
+    let root = hits[0].object;
+    if (root.userData.rootObject) return root.userData.rootObject;
+    while (root.parent && root.parent !== scene && !root.userData.buildType) root = root.parent;
+    return isMovableFurniture(root) ? root : null;
+  }
+
+  function gridPointFromPointer() {
+    mouseVector.x = (mouse.x / window.innerWidth) * 2 - 1;
+    mouseVector.y = -(mouse.y / window.innerHeight) * 2 + 1;
+    raycaster.setFromCamera(mouseVector, camera);
+    const hits = raycaster.intersectObject(groundPlane);
+    if (!hits.length) return null;
+    const point = hits[0].point;
+    const x = Math.round(point.x / 2) * 2;
+    const z = Math.round(point.z / 2) * 2;
+    const fromY = player ? player.position.y : 0;
+    return { x, z, y: getWalkHeight(x, z, fromY) };
+  }
+
+  function moveFurnitureToGrid(obj, point) {
+    if (!obj || !point) return;
+    obj.position.set(point.x, point.y, point.z);
+  }
+
+  function highlightFurniture(obj, on) {
+    if (!obj) return;
+    obj.traverse((c) => {
+      if (c.material && c.material.emissive) {
+        c.material.emissive.setHex(on ? 0x554400 : 0x000000);
+      }
+    });
+  }
+
+  function clearFurniturePick() {
+    if (furnitureTapPick) highlightFurniture(furnitureTapPick, false);
+    if (furnitureHold && furnitureHold.obj) highlightFurniture(furnitureHold.obj, false);
+    furnitureHold = null;
+    furnitureTapPick = null;
   }
 
   // ---------- Interact: leash, saddle, ride ----------
@@ -2019,7 +2293,7 @@
 
     const animal = nearestAnimal(3.5);
     if (!animal) {
-      toast(insideHouse ? 'Inside — open Build Mode to decorate!' : 'Stand by a house door and press Use / E');
+      toast(insideHouse ? 'Inside — open Build Mode to decorate!' : 'Walk in a door — or press Use / E at the door');
       return;
     }
 
@@ -2154,8 +2428,25 @@
       mouse.x = t.clientX;
       mouse.y = t.clientY;
       if (gameState === 'BUILD_MODE') {
+        const furn = findFurnitureAtPointer();
+        if (furn) {
+          if (furnitureTapPick && furnitureTapPick !== furn) highlightFurniture(furnitureTapPick, false);
+          furnitureHold = { obj: furn, startX: t.clientX, startY: t.clientY, moved: false, id: t.identifier };
+          highlightFurniture(furn, true);
+          return;
+        }
+        if (furnitureTapPick) {
+          const pt = gridPointFromPointer();
+          if (pt) {
+            moveFurnitureToGrid(furnitureTapPick, pt);
+            highlightFurniture(furnitureTapPick, false);
+            furnitureTapPick = null;
+            toast('Moved it!');
+          }
+          return;
+        }
+        furnitureHold = { placeTap: true, startX: t.clientX, startY: t.clientY, moved: false, id: t.identifier };
         updateBuildGhostPosition();
-        placeBuildObject();
         return;
       }
       touchLookId = t.identifier;
@@ -2163,6 +2454,33 @@
     }, { passive: true });
 
     canvasHost.addEventListener('touchmove', (e) => {
+      if (gameState === 'BUILD_MODE' && furnitureHold && furnitureHold.obj) {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const t = e.changedTouches[i];
+          if (t.identifier !== furnitureHold.id) continue;
+          mouse.x = t.clientX;
+          mouse.y = t.clientY;
+          if (Math.abs(t.clientX - furnitureHold.startX) + Math.abs(t.clientY - furnitureHold.startY) > 12) {
+            furnitureHold.moved = true;
+            const pt = gridPointFromPointer();
+            if (pt) moveFurnitureToGrid(furnitureHold.obj, pt);
+          }
+        }
+        return;
+      }
+      if (furnitureHold && furnitureHold.placeTap) {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const t = e.changedTouches[i];
+          if (t.identifier !== furnitureHold.id) continue;
+          mouse.x = t.clientX;
+          mouse.y = t.clientY;
+          if (Math.abs(t.clientX - furnitureHold.startX) + Math.abs(t.clientY - furnitureHold.startY) > 14) {
+            furnitureHold.moved = true;
+          }
+          updateBuildGhostPosition();
+        }
+        return;
+      }
       if (touchLookId == null) return;
       for (let i = 0; i < e.changedTouches.length; i++) {
         const t = e.changedTouches[i];
@@ -2179,6 +2497,27 @@
     }, { passive: true });
 
     const endLook = (e) => {
+      if (furnitureHold) {
+        let ended = false;
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          if (e.changedTouches[i].identifier === furnitureHold.id) ended = true;
+        }
+        if (ended) {
+          if (furnitureHold.placeTap && !furnitureHold.moved) {
+            updateBuildGhostPosition();
+            placeBuildObject();
+          } else if (furnitureHold.obj && !furnitureHold.moved) {
+            furnitureTapPick = furnitureHold.obj;
+            toast('Tap a new spot to put it');
+          } else if (furnitureHold.obj && furnitureHold.moved) {
+            highlightFurniture(furnitureHold.obj, false);
+            furnitureTapPick = null;
+            toast('Moved it!');
+          }
+          if (furnitureHold.placeTap || furnitureHold.moved) furnitureHold = null;
+          else furnitureHold = null;
+        }
+      }
       for (let i = 0; i < e.changedTouches.length; i++) {
         if (e.changedTouches[i].identifier === touchLookId) {
           touchLookId = null;
@@ -2191,7 +2530,8 @@
 
     $('touch-jump').addEventListener('touchstart', (e) => {
       e.preventDefault();
-      if (!buildMode && !mountedHorse && player && player.position.y <= 0.1) {
+      const gy = player ? getWalkHeight(player.position.x, player.position.z, player.position.y) : 0;
+      if (!mountedHorse && player && player.position.y <= gy + 0.12) {
         player.userData.jumpVel = 0.3;
       }
     }, { passive: false });
@@ -2233,7 +2573,8 @@
       keys[e.key.toLowerCase()] = true;
       if ((gameState === 'PLAYING' || gameState === 'BUILD_MODE') && e.code === 'Space') {
         e.preventDefault();
-        if (!buildMode && !mountedHorse && player && player.position.y <= 0.1) {
+        const gy = player ? getWalkHeight(player.position.x, player.position.z, player.position.y) : 0;
+        if (!mountedHorse && player && player.position.y <= gy + 0.12) {
           player.userData.jumpVel = 0.3;
         }
       }
@@ -2251,25 +2592,51 @@
       if (gameState === 'PLAYING' && document.pointerLockElement) {
         cameraAngle -= e.movementX * 0.002;
       }
+      if (gameState === 'BUILD_MODE' && furnitureHold && furnitureHold.obj && mouse.down) {
+        if (Math.abs(e.clientX - furnitureHold.startX) + Math.abs(e.clientY - furnitureHold.startY) > 4) {
+          furnitureHold.moved = true;
+          const pt = gridPointFromPointer();
+          if (pt) moveFurnitureToGrid(furnitureHold.obj, pt);
+        }
+        return;
+      }
       if (gameState === 'BUILD_MODE') updateBuildGhostPosition();
     });
     document.addEventListener('mousedown', (e) => {
       mouse.down = true;
+      mouse.x = e.clientX;
+      mouse.y = e.clientY;
       if (gameState === 'PLAYING' && e.target.tagName === 'CANVAS' && !isTouchDevice) {
         document.body.requestPointerLock();
       }
-      if (gameState === 'BUILD_MODE') {
-        if (e.button === 0) placeBuildObject();
+      if (gameState === 'BUILD_MODE' && (e.target.tagName === 'CANVAS' || e.target.id === 'canvas-container')) {
         if (e.button === 2) {
           e.preventDefault();
           tryRemoveAtMouse();
+          return;
+        }
+        if (e.button === 0) {
+          const furn = findFurnitureAtPointer();
+          if (furn) {
+            furnitureHold = { obj: furn, startX: e.clientX, startY: e.clientY, moved: false };
+            highlightFurniture(furn, true);
+            return;
+          }
+          placeBuildObject();
         }
       }
     });
     document.addEventListener('contextmenu', (e) => {
       if (gameState === 'BUILD_MODE') e.preventDefault();
     });
-    document.addEventListener('mouseup', () => { mouse.down = false; });
+    document.addEventListener('mouseup', () => {
+      if (furnitureHold && furnitureHold.obj) {
+        highlightFurniture(furnitureHold.obj, false);
+        if (furnitureHold.moved) toast('Moved it!');
+        furnitureHold = null;
+      }
+      mouse.down = false;
+    });
     document.addEventListener('wheel', (e) => {
       if (gameState === 'PLAYING' || gameState === 'BUILD_MODE') {
         cameraDistance = Math.max(3, Math.min(20, cameraDistance + e.deltaY * 0.01));
@@ -2290,14 +2657,16 @@
       return;
     }
 
-    if (buildMode) {
-      if (isTouchDevice) updateBuildGhostPosition();
-      return;
-    }
+    if (buildMode && isTouchDevice && !furnitureHold) updateBuildGhostPosition();
 
     const { moveX, moveZ } = getMoveVector(0.08);
-    player.position.x += moveX;
-    player.position.z += moveZ;
+    if (moveX !== 0 || moveZ !== 0) {
+      const nx = player.position.x + moveX;
+      const nz = player.position.z + moveZ;
+      const y = player.position.y;
+      if (!blockedAt(nx, y, player.position.z)) player.position.x = nx;
+      if (!blockedAt(player.position.x, y, nz)) player.position.z = nz;
+    }
     // Roblox-style: face the direction you walk (smoothed)
     if (moveX !== 0 || moveZ !== 0) {
       const targetRot = Math.atan2(moveX, moveZ);
@@ -2308,10 +2677,14 @@
     }
 
     if (!player.userData.jumpVel) player.userData.jumpVel = 0;
+    const floorY = getWalkHeight(player.position.x, player.position.z, player.position.y);
+    if (player.position.y > floorY + 0.16 && player.userData.jumpVel === 0) {
+      player.userData.jumpVel = -0.02;
+    }
     player.position.y += player.userData.jumpVel;
     player.userData.jumpVel -= 0.015;
-    if (player.position.y < 0) {
-      player.position.y = 0;
+    if (player.position.y <= floorY) {
+      player.position.y = floorY;
       player.userData.jumpVel = 0;
     }
 
@@ -2320,7 +2693,7 @@
     const la = player.userData.leftArm, ra = player.userData.rightArm;
     const ll = player.userData.leftLeg, rl = player.userData.rightLeg;
     if (la && ra && ll && rl) {
-      if (isMoving && player.position.y <= 0.1) {
+      if (isMoving && player.position.y <= floorY + 0.12) {
         la.rotation.x = Math.sin(time * 2) * 0.5;
         ra.rotation.x = -Math.sin(time * 2) * 0.5;
         ll.rotation.x = Math.sin(time * 2 + Math.PI) * 0.4;
@@ -2337,8 +2710,9 @@
   function updateCamera() {
     if (!player || (gameState !== 'PLAYING' && gameState !== 'BUILD_MODE')) return;
     const target = mountedHorse || player;
-    const targetX = target.position.x - Math.sin(cameraAngle) * cameraDistance;
-    const targetZ = target.position.z - Math.cos(cameraAngle) * cameraDistance;
+    const followDist = insideHouse ? Math.min(cameraDistance, 7.2) : cameraDistance;
+    const targetX = target.position.x - Math.sin(cameraAngle) * followDist;
+    const targetZ = target.position.z - Math.cos(cameraAngle) * followDist;
     camera.position.x += (targetX - camera.position.x) * 0.1;
     camera.position.z += (targetZ - camera.position.z) * 0.1;
     camera.position.y += ((target.position.y + cameraHeight) - camera.position.y) * 0.1;
@@ -2370,6 +2744,7 @@
     if (gameState === 'PLAYING' || gameState === 'BUILD_MODE') {
       updatePlayer();
       updateCamera();
+      updateHouseWalk();
       updateAnimals();
       updateParticles();
       renderer.render(scene, camera);
