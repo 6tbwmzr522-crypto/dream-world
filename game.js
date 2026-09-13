@@ -3132,6 +3132,11 @@
     boxesNear(x, z, r) {
       r = r || 2;
       return collideBoxes.filter((b) => !(x + r < b.minX || x - r > b.maxX || z + r < b.minZ || z - r > b.maxZ));
+    },
+    aim(angle) {
+      cameraAngle = angle;
+      if (player) player.rotation.y = angle;
+      return cameraAngle;
     }
   };
 
