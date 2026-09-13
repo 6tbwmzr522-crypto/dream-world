@@ -148,12 +148,15 @@
   let walkables = [];
   let collideBoxes = [];
   let clippedWalls = [];
+  let worldCharacters = [];
+  let saidPeopleBump = false;
   let furnitureHold = null;
   let furnitureTapPick = null;
   const MOVABLE_FURNITURE = { bed: true, table: true, chair: true, sofa: true };
   let cameraAngle = 0;
-  let cameraHeight = 6;
-  let cameraDistance = 10;
+  let cameraHeight = 2.4;
+  let cameraDistance = 6.5;
+  let lookTweakUntil = 0;
   let raycaster = new THREE.Raycaster();
   let mouseVector = new THREE.Vector2();
   let buildGhost = null;
@@ -993,6 +996,8 @@
     walkables = [];
     collideBoxes = [];
     clippedWalls = [];
+    worldCharacters = [];
+    saidPeopleBump = false;
     furnitureHold = null;
     furnitureTapPick = null;
   }
@@ -1059,11 +1064,16 @@
     const charData = CHARACTERS.find((c) => c.saved) || CHARACTERS[0];
     player = buildCharacterMesh(charData);
     player.position.set(0, 0, 8);
+    markCharacterBody(player, charData);
     player.userData.jumpVel = 0;
     scene.add(player);
+    spawnWorldCharacters(charData);
 
-    cameraAngle = 0;
-    camera.position.set(0, 8, 18);
+    cameraAngle = Math.PI;
+    cameraHeight = 2.4;
+    cameraDistance = 6.5;
+    player.rotation.y = Math.PI;
+    camera.position.set(0, 3.5, 14.5);
     toast('Welcome to ' + world.name + '!');
   }
 
@@ -1104,6 +1114,7 @@
         const bx = (i % 4) * 8 - 12;
         const bz = Math.floor(i / 4) * 10 - 4;
         scene.add(createBox(0x708090, 3, h, 3, bx, h / 2, bz));
+        addWorldSolid(3, h, 3, bx, h / 2, bz);
       }
       spawnAnimals(8);
     } else if (world.id === 'field') {
@@ -1183,6 +1194,7 @@
     g.add(createBox(0x5D4037, 1.1, 2.0, 0.1, 0, 1.1, d / 2 + 0.02));
     g.add(createBox(0x81D4FA, 1.0, 1.0, 0.08, -1.5, 2.0, d / 2 + 0.02));
     g.add(createBox(0x81D4FA, 1.0, 1.0, 0.08, 1.5, 2.0, d / 2 + 0.02));
+    addWorldSolid(w, h, d, x, y + h / 2, z);
 
     if (placeId === 'hospital') {
       g.add(createBox(0xE53935, 0.35, 1.4, 0.15, 0, h + 1.0, 0));
@@ -1237,6 +1249,24 @@
     return box;
   }
 
+  function addWorldSolid(w, h, d, x, y, z) {
+    collideBoxes.push({
+      minX: x - w / 2,
+      maxX: x + w / 2,
+      minY: y - h / 2,
+      maxY: y + h / 2,
+      minZ: z - d / 2,
+      maxZ: z + d / 2
+    });
+  }
+
+  function addFrontWallWithDoor(house, color, width, height, thick, y, z, doorW, label) {
+    const side = (width - doorW) / 2;
+    const cx = doorW / 2 + side / 2;
+    addRemovableWall(house, color, side, height, thick, -cx, y, z, label);
+    addRemovableWall(house, color, side, height, thick, cx, y, z, label);
+  }
+
   function addWalkable(parent, w, d, x, y, z) {
     const wx = parent.position.x + x;
     const wz = parent.position.z + z;
@@ -1271,6 +1301,177 @@
       return true;
     }
     return false;
+  }
+
+  function charBodyRadius(charData) {
+    const ageScale = AGE_SCALES[(charData && charData.age) || 'preteen'] || 0.75;
+    return Math.max(0.22, 0.36 * ageScale);
+  }
+
+  function markCharacterBody(mesh, charData) {
+    mesh.userData.isCharacter = true;
+    mesh.userData.bodyR = charBodyRadius(charData);
+  }
+
+  function eachCharacterBody(fn) {
+    if (player) fn(player);
+    for (let i = 0; i < worldCharacters.length; i++) fn(worldCharacters[i]);
+  }
+
+  function bodyFeetY(mesh) {
+    if (mesh === player && mountedHorse) return mountedHorse.position.y || 0;
+    return mesh.position.y || 0;
+  }
+
+  // Circle vs circle on XZ. Different floors do not block. Animals stay free.
+  function bodyBlockedAt(x, y, z, self) {
+    let hit = false;
+    eachCharacterBody((other) => {
+      if (hit || !other || other === self) return;
+      if (Math.abs(bodyFeetY(other) - y) > 1.15) return;
+      const or = other.userData.bodyR || 0.32;
+      const sr = (self && self.userData && self.userData.bodyR) || 0.32;
+      const dx = x - other.position.x;
+      const dz = z - other.position.z;
+      const min = or + sr;
+      if (dx * dx + dz * dz < min * min) hit = true;
+    });
+    return hit;
+  }
+
+  function tryMoveBody(mesh, dx, dz, skipWalls) {
+    if (!mesh) return false;
+    const y = bodyFeetY(mesh);
+    let hitPerson = false;
+    const nx = mesh.position.x + dx;
+    const nz = mesh.position.z + dz;
+    if (skipWalls || !blockedAt(nx, y, mesh.position.z)) {
+      if (!bodyBlockedAt(nx, y, mesh.position.z, mesh)) mesh.position.x = nx;
+      else hitPerson = true;
+    }
+    if (skipWalls || !blockedAt(mesh.position.x, y, nz)) {
+      if (!bodyBlockedAt(mesh.position.x, y, nz, mesh)) mesh.position.z = nz;
+      else hitPerson = true;
+    }
+    return hitPerson;
+  }
+
+  function unstickCharacter(self) {
+    if (!self) return;
+    for (let n = 0; n < 8; n++) {
+      if (!bodyBlockedAt(self.position.x, self.position.y, self.position.z, self)) return;
+      let other = null;
+      eachCharacterBody((body) => {
+        if (other || !body || body === self) return;
+        if (Math.abs(bodyFeetY(body) - bodyFeetY(self)) > 1.15) return;
+        const or = body.userData.bodyR || 0.32;
+        const sr = self.userData.bodyR || 0.32;
+        const dx = self.position.x - body.position.x;
+        const dz = self.position.z - body.position.z;
+        if (dx * dx + dz * dz < (or + sr) * (or + sr)) other = body;
+      });
+      if (!other) return;
+      let dx = self.position.x - other.position.x;
+      let dz = self.position.z - other.position.z;
+      if (dx === 0 && dz === 0) dx = 1;
+      const len = Math.hypot(dx, dz) || 1;
+      const need = (self.userData.bodyR || 0.32) + (other.userData.bodyR || 0.32) + 0.06;
+      const ox = other.position.x + (dx / len) * need;
+      const oz = other.position.z + (dz / len) * need;
+      if (!blockedAt(ox, self.position.y, oz)) {
+        self.position.x = ox;
+        self.position.z = oz;
+      } else {
+        const bx = other.position.x - (dx / len) * need;
+        const bz = other.position.z - (dz / len) * need;
+        if (!blockedAt(bx, self.position.y, bz)) {
+          self.position.x = bx;
+          self.position.z = bz;
+        } else {
+          return;
+        }
+      }
+    }
+  }
+
+  function spawnWorldCharacters(playerChar) {
+    const extras = CHARACTERS.filter((c) => c.saved && c.id !== playerChar.id).slice(0, 8);
+    if (!extras.length) {
+      extras.push(CHARACTERS.find((c) => c.id !== playerChar.id) || defaultCharacter(1));
+    }
+    // Open yard in front of spawn — not in doors, stairs, or house rooms.
+    const spots = [
+      { x: 1.35, z: 6.2 },
+      { x: -2.5, z: 5.4 },
+      { x: 3.4, z: 9.4 },
+      { x: -3.2, z: 9.0 },
+      { x: 5.1, z: 6.6 },
+      { x: -5.0, z: 6.8 },
+      { x: 1.6, z: 12.2 },
+      { x: -1.8, z: 12.0 }
+    ];
+    extras.forEach((charData, i) => {
+      const doll = buildCharacterMesh(charData);
+      const spot = spots[i % spots.length];
+      doll.position.set(spot.x, 0, spot.z);
+      doll.rotation.y = Math.PI;
+      markCharacterBody(doll, charData);
+      doll.userData.homeX = spot.x;
+      doll.userData.homeZ = spot.z;
+      doll.userData.dir = Math.random() * Math.PI * 2;
+      doll.userData.walkTimer = Math.floor(Math.random() * 40);
+      doll.userData.stay = i === 0;
+      doll.userData.paused = i === 0;
+      scene.add(doll);
+      worldCharacters.push(doll);
+    });
+  }
+
+  function updateWorldCharacters() {
+    const time = Date.now() * 0.01;
+    worldCharacters.forEach((ch) => {
+      const d = ch.userData;
+      d.walkTimer = (d.walkTimer || 0) + 1;
+      if (d.stay) {
+        d.paused = true;
+      } else if (d.walkTimer > 90) {
+        d.dir = (d.dir || 0) + (Math.random() - 0.5) * 1.4;
+        d.walkTimer = 0;
+        d.paused = Math.random() < 0.4;
+      }
+      const homeX = d.homeX != null ? d.homeX : ch.position.x;
+      const homeZ = d.homeZ != null ? d.homeZ : ch.position.z;
+      if (Math.hypot(ch.position.x - homeX, ch.position.z - homeZ) > 5.5) {
+        d.dir = Math.atan2(homeX - ch.position.x, homeZ - ch.position.z);
+        d.paused = false;
+      }
+      let moving = false;
+      if (!d.paused) {
+        const speed = 0.022;
+        const dx = Math.sin(d.dir) * speed;
+        const dz = Math.cos(d.dir) * speed;
+        tryMoveBody(ch, dx, dz);
+        if (dx || dz) {
+          ch.rotation.y = Math.atan2(dx, dz);
+          moving = true;
+        }
+      }
+      ch.position.y = getWalkHeight(ch.position.x, ch.position.z, ch.position.y);
+      const la = d.leftArm, ra = d.rightArm, ll = d.leftLeg, rl = d.rightLeg;
+      if (la && ra && ll && rl) {
+        if (moving) {
+          la.rotation.x = Math.sin(time * 2) * 0.45;
+          ra.rotation.x = -Math.sin(time * 2) * 0.45;
+          ll.rotation.x = Math.sin(time * 2 + Math.PI) * 0.35;
+          rl.rotation.x = Math.sin(time * 2) * 0.35;
+        } else {
+          la.rotation.x = 0;
+          ra.rotation.x = 0;
+          ll.rotation.x = 0;
+          rl.rotation.x = 0;
+        }
+      }
+    });
   }
 
   function addFloorAroundHole(house, cx, cz, w, d, y, hole, color) {
@@ -1373,7 +1574,11 @@
       minX: house.position.x - halfW,
       maxX: house.position.x + halfW,
       minZ: house.position.z - halfD,
-      maxZ: house.position.z + halfD + 0.45
+      maxZ: house.position.z + halfD + 0.45,
+      camMinX: house.position.x - halfW + 0.45,
+      camMaxX: house.position.x + halfW - 0.45,
+      camMinZ: house.position.z - halfD + 0.4,
+      camMaxZ: house.position.z + halfD - 0.2
     });
     const label = makeLabelSprite('🏠 Walk inside!');
     label.position.set(doorLocal.x, 3.2, doorLocal.z + 0.2);
@@ -1493,6 +1698,7 @@
     if (insideHouse === h || houseAroundPlayer() === h) {
       player.position.set(h.outside.x, 0, h.outside.z);
       player.userData.jumpVel = 0;
+      unstickCharacter(player);
       insideHouse = null;
       restoreClippedWalls();
       toast('Left ' + h.name);
@@ -1502,6 +1708,7 @@
     const insideY = getWalkHeight(h.inside.x, h.inside.z, 0.2);
     player.position.set(h.inside.x, insideY, h.inside.z);
     player.userData.jumpVel = 0;
+    unstickCharacter(player);
     setInsideHouse(h, false);
     toast('Popped inside ' + h.name + '! Walk out the door anytime');
     return true;
@@ -1515,8 +1722,7 @@
     house.add(createBox(0x90A4AE, 1.2, 0.06, 4, 0, 0.06, 3));
     house.add(createBox(0xC8B59A, 7.2, 0.2, 5.5, 0, 0.12, 0));
     addRemovableWall(house, 0xF5F5F5, 7, 2.4, 0.18, 0, 1.35, -2.5, 'wall');
-    addRemovableWall(house, 0xF5F5F5, 2.45, 2.4, 0.18, -2.275, 1.35, 2.5, 'wall');
-    addRemovableWall(house, 0xF5F5F5, 2.45, 2.4, 0.18, 2.275, 1.35, 2.5, 'wall');
+    addFrontWallWithDoor(house, 0xF5F5F5, 7, 2.4, 0.18, 1.35, 2.5, 1.42, 'wall');
     addRemovableWall(house, 0xF5F5F5, 0.18, 2.4, 5, -3.4, 1.35, 0, 'wall');
     addRemovableWall(house, 0xF5F5F5, 0.18, 2.4, 5, 3.4, 1.35, 0, 'wall');
     addRemovableWall(house, 0xFAFAFA, 7, 2.2, 0.18, 0, 3.5, -2.5, 'wall');
@@ -1579,8 +1785,7 @@
     house.add(createBox(0x90A4AE, 1.2, 0.15, 1.5, 0, 0.2, 3.5));
     house.add(createBox(0x6D4C41, 0.25, 0.7, 0.2, -3.8, 0.5, 3.2));
     addRemovableWall(house, 0x455A64, 8, 2.6, 0.2, 0, 1.5, -3, 'wall');
-    addRemovableWall(house, 0x455A64, 2.9, 2.6, 0.2, -2.55, 1.5, 3, 'wall');
-    addRemovableWall(house, 0x455A64, 2.9, 2.6, 0.2, 2.55, 1.5, 3, 'wall');
+    addFrontWallWithDoor(house, 0x455A64, 8, 2.6, 0.2, 1.5, 3, 1.46, 'wall');
     addRemovableWall(house, 0x455A64, 0.2, 2.6, 6, -3.9, 1.5, 0, 'wall');
     addRemovableWall(house, 0x455A64, 0.2, 2.6, 6, 3.9, 1.5, 0, 'wall');
     addRemovableWall(house, 0xD7CCC8, 2.5, 2.4, 0.15, -2.5, 1.45, 3.05, 'wood wall');
@@ -1635,8 +1840,7 @@
     house.add(createBox(0xB0BEC5, 9, 0.12, 8, 0, 0.04, 0));
     house.add(createBox(0xFFF3E0, 7, 0.2, 5.5, 0, 0.15, 0));
     addRemovableWall(house, 0xFFF8E1, 7, 2.5, 0.18, 0, 1.4, -2.5, 'wall');
-    addRemovableWall(house, 0xFFF8E1, 2.45, 2.5, 0.18, -2.275, 1.4, 2.5, 'wall');
-    addRemovableWall(house, 0xFFF8E1, 2.45, 2.5, 0.18, 2.275, 1.4, 2.5, 'wall');
+    addFrontWallWithDoor(house, 0xFFF8E1, 7, 2.5, 0.18, 1.4, 2.5, 1.42, 'wall');
     addRemovableWall(house, 0xFFF8E1, 0.18, 2.5, 5, -3.4, 1.4, 0, 'wall');
     addRemovableWall(house, 0xFFF8E1, 0.18, 2.5, 5, 3.4, 1.4, 0, 'wall');
     [[-3.5, -2.5], [3.5, -2.5], [-3.5, 2.5], [3.5, 2.5]].forEach((p) => {
@@ -1710,6 +1914,7 @@
     barn.add(createBox(0x87CEEB, 1, 1, 0.1, -1.5, 2.5, 2.55));
     barn.add(createBox(0x87CEEB, 1, 1, 0.1, 1.5, 2.5, 2.55));
     barn.position.set(x, y, z);
+    addWorldSolid(6, 4, 5, x, y + 2, z);
     scene.add(barn);
   }
 
@@ -1719,6 +1924,7 @@
     g.add(createBox(0x6D4C41, 4.5, 0.2, 4, 0, 2.3, 0));
     g.add(createBox(0x5D4037, 0.9, 1.6, 0.1, 0, 0.9, 1.8));
     g.position.set(x, y, z);
+    addWorldSolid(4, 2.2, 3.5, x, y + 1.1, z);
     scene.add(g);
   }
 
@@ -2288,6 +2494,7 @@
       player.position.x += 1.5;
       player.visible = true;
       mountedHorse = null;
+      unstickCharacter(player);
       toast('Dismounted');
       return;
     }
@@ -2490,7 +2697,8 @@
         if (t.identifier !== touchLookId) continue;
         if (touchLookLast) {
           cameraAngle -= (t.clientX - touchLookLast.x) * 0.005;
-          cameraHeight = Math.max(3, Math.min(12, cameraHeight - (t.clientY - touchLookLast.y) * 0.02));
+          cameraHeight = Math.max(1.2, Math.min(6.5, cameraHeight - (t.clientY - touchLookLast.y) * 0.02));
+          noteLookTweak();
         }
         touchLookLast = { x: t.clientX, y: t.clientY };
         mouse.x = t.clientX;
@@ -2556,15 +2764,30 @@
     }, { passive: false });
   }
 
+  function shortestAngle(from, to) {
+    let d = to - from;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    return d;
+  }
+
+  function isLookTweaking() {
+    return !!(document.pointerLockElement || touchLookId != null || Date.now() < lookTweakUntil);
+  }
+
+  function noteLookTweak() {
+    lookTweakUntil = Date.now() + 280;
+  }
+
   function getMoveVector(baseSpeed) {
     let moveX = 0, moveZ = 0;
     const speed = (keys['shift'] || touchRunning) ? baseSpeed * 1.9 : baseSpeed;
-    if (keys['w'] || keys['arrowup']) { moveX -= Math.sin(cameraAngle) * speed; moveZ -= Math.cos(cameraAngle) * speed; }
-    if (keys['s'] || keys['arrowdown']) { moveX += Math.sin(cameraAngle) * speed; moveZ += Math.cos(cameraAngle) * speed; }
+    // W / joystick-up = walk where the camera is looking (away from the lens)
+    if (keys['w'] || keys['arrowup']) { moveX += Math.sin(cameraAngle) * speed; moveZ += Math.cos(cameraAngle) * speed; }
+    if (keys['s'] || keys['arrowdown']) { moveX -= Math.sin(cameraAngle) * speed; moveZ -= Math.cos(cameraAngle) * speed; }
     if (keys['a'] || keys['arrowleft']) { moveX -= Math.cos(cameraAngle) * speed; moveZ += Math.sin(cameraAngle) * speed; }
     if (keys['d'] || keys['arrowright']) { moveX += Math.cos(cameraAngle) * speed; moveZ -= Math.sin(cameraAngle) * speed; }
     if (touchMove.active) {
-      // joystick: up = forward
       moveX += (-touchMove.y * Math.sin(cameraAngle) + touchMove.x * Math.cos(cameraAngle)) * speed;
       moveZ += (-touchMove.y * Math.cos(cameraAngle) - touchMove.x * Math.sin(cameraAngle)) * speed;
     }
@@ -2594,6 +2817,7 @@
       mouse.y = e.clientY;
       if (gameState === 'PLAYING' && document.pointerLockElement) {
         cameraAngle -= e.movementX * 0.002;
+        noteLookTweak();
       }
       if (gameState === 'BUILD_MODE' && furnitureHold && furnitureHold.obj && mouse.down) {
         if (Math.abs(e.clientX - furnitureHold.startX) + Math.abs(e.clientY - furnitureHold.startY) > 4) {
@@ -2652,10 +2876,19 @@
 
     if (mountedHorse) {
       const { moveX, moveZ } = getMoveVector(0.12);
-      mountedHorse.position.x += moveX;
-      mountedHorse.position.z += moveZ;
-      if (moveX !== 0 || moveZ !== 0) mountedHorse.rotation.y = Math.atan2(moveX, moveZ);
-      player.position.copy(mountedHorse.position);
+      player.position.x = mountedHorse.position.x;
+      player.position.z = mountedHorse.position.z;
+      player.position.y = 1.6;
+      tryMoveBody(player, moveX, moveZ, true);
+      mountedHorse.position.x = player.position.x;
+      mountedHorse.position.z = player.position.z;
+      if (moveX !== 0 || moveZ !== 0) {
+        mountedHorse.rotation.y = Math.atan2(moveX, moveZ);
+        const camFwd = moveX * Math.sin(cameraAngle) + moveZ * Math.cos(cameraAngle);
+        if (!isLookTweaking() && camFwd > -0.012) {
+          cameraAngle += shortestAngle(cameraAngle, mountedHorse.rotation.y) * 0.16;
+        }
+      }
       player.position.y = 1.6;
       return;
     }
@@ -2664,19 +2897,20 @@
 
     const { moveX, moveZ } = getMoveVector(0.08);
     if (moveX !== 0 || moveZ !== 0) {
-      const nx = player.position.x + moveX;
-      const nz = player.position.z + moveZ;
-      const y = player.position.y;
-      if (!blockedAt(nx, y, player.position.z)) player.position.x = nx;
-      if (!blockedAt(player.position.x, y, nz)) player.position.z = nz;
+      const hitPerson = tryMoveBody(player, moveX, moveZ);
+      if (hitPerson && !saidPeopleBump) {
+        saidPeopleBump = true;
+        toast('Oops — they are in the way!');
+      }
     }
-    // Roblox-style: face the direction you walk (smoothed)
+    // Face the walk. Camera stays behind her unless she is looking around or backing up.
     if (moveX !== 0 || moveZ !== 0) {
       const targetRot = Math.atan2(moveX, moveZ);
-      let diff = targetRot - player.rotation.y;
-      while (diff > Math.PI) diff -= Math.PI * 2;
-      while (diff < -Math.PI) diff += Math.PI * 2;
-      player.rotation.y += diff * 0.2;
+      player.rotation.y += shortestAngle(player.rotation.y, targetRot) * 0.28;
+      const camFwd = moveX * Math.sin(cameraAngle) + moveZ * Math.cos(cameraAngle);
+      if (!isLookTweaking() && camFwd > -0.012) {
+        cameraAngle += shortestAngle(cameraAngle, targetRot) * 0.16;
+      }
     }
 
     if (!player.userData.jumpVel) player.userData.jumpVel = 0;
@@ -2713,13 +2947,28 @@
   function updateCamera() {
     if (!player || (gameState !== 'PLAYING' && gameState !== 'BUILD_MODE')) return;
     const target = mountedHorse || player;
-    const followDist = insideHouse ? Math.min(cameraDistance, 7.2) : cameraDistance;
-    const targetX = target.position.x - Math.sin(cameraAngle) * followDist;
-    const targetZ = target.position.z - Math.cos(cameraAngle) * followDist;
-    camera.position.x += (targetX - camera.position.x) * 0.1;
-    camera.position.z += (targetZ - camera.position.z) * 0.1;
-    camera.position.y += ((target.position.y + cameraHeight) - camera.position.y) * 0.1;
-    camera.lookAt(target.position.x, target.position.y + 1, target.position.z);
+    const indoor = !!(insideHouse && !mountedHorse);
+    const followDist = indoor ? Math.min(cameraDistance, 2.95) : cameraDistance;
+    const followH = indoor ? 1.58 : cameraHeight;
+    let targetX = target.position.x - Math.sin(cameraAngle) * followDist;
+    let targetZ = target.position.z - Math.cos(cameraAngle) * followDist;
+    let targetY = target.position.y + followH;
+    if (indoor) {
+      const h = insideHouse;
+      const minX = h.camMinX != null ? h.camMinX : h.minX + 0.4;
+      const maxX = h.camMaxX != null ? h.camMaxX : h.maxX - 0.4;
+      const minZ = h.camMinZ != null ? h.camMinZ : h.minZ + 0.4;
+      const maxZ = h.camMaxZ != null ? h.camMaxZ : h.maxZ - 0.35;
+      targetX = Math.max(minX, Math.min(maxX, targetX));
+      targetZ = Math.max(minZ, Math.min(maxZ, targetZ));
+      const ceil = target.position.y > 1.7 ? 4.55 : 2.28;
+      targetY = Math.min(target.position.y + followH, ceil);
+    }
+    const lerp = indoor ? 0.24 : 0.18;
+    camera.position.x += (targetX - camera.position.x) * lerp;
+    camera.position.z += (targetZ - camera.position.z) * lerp;
+    camera.position.y += (targetY - camera.position.y) * lerp;
+    camera.lookAt(target.position.x, target.position.y + (indoor ? 1.05 : 1.15), target.position.z);
   }
 
   function updateParticles() {
@@ -2746,6 +2995,7 @@
     }
     if (gameState === 'PLAYING' || gameState === 'BUILD_MODE') {
       updatePlayer();
+      updateWorldCharacters();
       updateCamera();
       updateHouseWalk();
       updateAnimals();
@@ -2757,6 +3007,9 @@
         $('game-ui').dataset.camy = camera.position.y.toFixed(2);
         $('game-ui').dataset.inside = insideHouse ? insideHouse.name : '';
         $('game-ui').dataset.houses = String(enterableHouses.length);
+        $('game-ui').dataset.chars = String(worldCharacters.length);
+        $('game-ui').dataset.bump = bodyBlockedAt(player.position.x, player.position.y, player.position.z, player) ? '1' : '0';
+        $('game-ui').dataset.cam = camera.position.x.toFixed(1) + ',' + camera.position.y.toFixed(1) + ',' + camera.position.z.toFixed(1);
       }
       renderer.render(scene, camera);
     }
