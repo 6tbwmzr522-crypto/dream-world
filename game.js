@@ -1401,7 +1401,7 @@
     }
     // Open yard in front of spawn — not in doors, stairs, or house rooms.
     const spots = [
-      { x: 2.3, z: 6.1 },
+      { x: 1.35, z: 6.2 },
       { x: -2.5, z: 5.4 },
       { x: 3.4, z: 9.4 },
       { x: -3.2, z: 9.0 },
@@ -1722,7 +1722,7 @@
     house.add(createBox(0x90A4AE, 1.2, 0.06, 4, 0, 0.06, 3));
     house.add(createBox(0xC8B59A, 7.2, 0.2, 5.5, 0, 0.12, 0));
     addRemovableWall(house, 0xF5F5F5, 7, 2.4, 0.18, 0, 1.35, -2.5, 'wall');
-    addFrontWallWithDoor(house, 0xF5F5F5, 7, 2.4, 0.18, 1.35, 2.5, 1.28, 'wall');
+    addFrontWallWithDoor(house, 0xF5F5F5, 7, 2.4, 0.18, 1.35, 2.5, 1.42, 'wall');
     addRemovableWall(house, 0xF5F5F5, 0.18, 2.4, 5, -3.4, 1.35, 0, 'wall');
     addRemovableWall(house, 0xF5F5F5, 0.18, 2.4, 5, 3.4, 1.35, 0, 'wall');
     addRemovableWall(house, 0xFAFAFA, 7, 2.2, 0.18, 0, 3.5, -2.5, 'wall');
@@ -1785,7 +1785,7 @@
     house.add(createBox(0x90A4AE, 1.2, 0.15, 1.5, 0, 0.2, 3.5));
     house.add(createBox(0x6D4C41, 0.25, 0.7, 0.2, -3.8, 0.5, 3.2));
     addRemovableWall(house, 0x455A64, 8, 2.6, 0.2, 0, 1.5, -3, 'wall');
-    addFrontWallWithDoor(house, 0x455A64, 8, 2.6, 0.2, 1.5, 3, 1.32, 'wall');
+    addFrontWallWithDoor(house, 0x455A64, 8, 2.6, 0.2, 1.5, 3, 1.46, 'wall');
     addRemovableWall(house, 0x455A64, 0.2, 2.6, 6, -3.9, 1.5, 0, 'wall');
     addRemovableWall(house, 0x455A64, 0.2, 2.6, 6, 3.9, 1.5, 0, 'wall');
     addRemovableWall(house, 0xD7CCC8, 2.5, 2.4, 0.15, -2.5, 1.45, 3.05, 'wood wall');
@@ -1840,7 +1840,7 @@
     house.add(createBox(0xB0BEC5, 9, 0.12, 8, 0, 0.04, 0));
     house.add(createBox(0xFFF3E0, 7, 0.2, 5.5, 0, 0.15, 0));
     addRemovableWall(house, 0xFFF8E1, 7, 2.5, 0.18, 0, 1.4, -2.5, 'wall');
-    addFrontWallWithDoor(house, 0xFFF8E1, 7, 2.5, 0.18, 1.4, 2.5, 1.28, 'wall');
+    addFrontWallWithDoor(house, 0xFFF8E1, 7, 2.5, 0.18, 1.4, 2.5, 1.42, 'wall');
     addRemovableWall(house, 0xFFF8E1, 0.18, 2.5, 5, -3.4, 1.4, 0, 'wall');
     addRemovableWall(house, 0xFFF8E1, 0.18, 2.5, 5, 3.4, 1.4, 0, 'wall');
     [[-3.5, -2.5], [3.5, -2.5], [-3.5, 2.5], [3.5, 2.5]].forEach((p) => {
