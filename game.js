@@ -1328,8 +1328,7 @@
 
   function addInteriorRooms(house, width, depth) {
     // Dollhouse interior walls like her wallpaper screenshot — removable
-    addRemovableWall(house, 0xFFF8E7, 0.12, 2.2, depth * 0.32, 0, 1.2, -depth * 0.28, 'interior wall');
-    addRemovableWall(house, 0xFFF8E7, 0.12, 2.2, depth * 0.32, 0, 1.2, depth * 0.28, 'interior wall');
+    addRemovableWall(house, 0xFFF8E7, 0.12, 2.2, depth * 0.28, 0, 1.2, -depth * 0.30, 'interior wall');
     for (let i = 0; i < 5; i++) {
       const stripe = createBox(i % 2 === 0 ? 0xF5E6C8 : 0xE8D5A3, 0.04, 2.0, depth * 0.8, -width * 0.22, 1.15, 0);
       markRemovable(stripe, 'wallpaper');
@@ -1374,7 +1373,7 @@
       minX: house.position.x - halfW,
       maxX: house.position.x + halfW,
       minZ: house.position.z - halfD,
-      maxZ: house.position.z + halfD
+      maxZ: house.position.z + halfD + 0.45
     });
     const label = makeLabelSprite('🏠 Walk inside!');
     label.position.set(doorLocal.x, 3.2, doorLocal.z + 0.2);
@@ -1480,6 +1479,10 @@
       restoreClippedWalls();
       toast('You walked out of ' + left.name);
       setOutsideHouseTips();
+    } else if (insideHouse && player.position.y > 1.7) {
+      $('hud-tip').textContent = 'Upstairs! Walk around · Build to decorate';
+    } else if (insideHouse && player.position.y <= 1.7) {
+      setInsideHouse(insideHouse, true);
     }
     updateBlockingWallClip();
   }
@@ -1512,8 +1515,8 @@
     house.add(createBox(0x90A4AE, 1.2, 0.06, 4, 0, 0.06, 3));
     house.add(createBox(0xC8B59A, 7.2, 0.2, 5.5, 0, 0.12, 0));
     addRemovableWall(house, 0xF5F5F5, 7, 2.4, 0.18, 0, 1.35, -2.5, 'wall');
-    addRemovableWall(house, 0xF5F5F5, 2.7, 2.4, 0.18, -2.15, 1.35, 2.5, 'wall');
-    addRemovableWall(house, 0xF5F5F5, 2.7, 2.4, 0.18, 2.15, 1.35, 2.5, 'wall');
+    addRemovableWall(house, 0xF5F5F5, 2.45, 2.4, 0.18, -2.275, 1.35, 2.5, 'wall');
+    addRemovableWall(house, 0xF5F5F5, 2.45, 2.4, 0.18, 2.275, 1.35, 2.5, 'wall');
     addRemovableWall(house, 0xF5F5F5, 0.18, 2.4, 5, -3.4, 1.35, 0, 'wall');
     addRemovableWall(house, 0xF5F5F5, 0.18, 2.4, 5, 3.4, 1.35, 0, 'wall');
     addRemovableWall(house, 0xFAFAFA, 7, 2.2, 0.18, 0, 3.5, -2.5, 'wall');
@@ -1576,8 +1579,8 @@
     house.add(createBox(0x90A4AE, 1.2, 0.15, 1.5, 0, 0.2, 3.5));
     house.add(createBox(0x6D4C41, 0.25, 0.7, 0.2, -3.8, 0.5, 3.2));
     addRemovableWall(house, 0x455A64, 8, 2.6, 0.2, 0, 1.5, -3, 'wall');
-    addRemovableWall(house, 0x455A64, 3.15, 2.6, 0.2, -2.425, 1.5, 3, 'wall');
-    addRemovableWall(house, 0x455A64, 3.15, 2.6, 0.2, 2.425, 1.5, 3, 'wall');
+    addRemovableWall(house, 0x455A64, 2.9, 2.6, 0.2, -2.55, 1.5, 3, 'wall');
+    addRemovableWall(house, 0x455A64, 2.9, 2.6, 0.2, 2.55, 1.5, 3, 'wall');
     addRemovableWall(house, 0x455A64, 0.2, 2.6, 6, -3.9, 1.5, 0, 'wall');
     addRemovableWall(house, 0x455A64, 0.2, 2.6, 6, 3.9, 1.5, 0, 'wall');
     addRemovableWall(house, 0xD7CCC8, 2.5, 2.4, 0.15, -2.5, 1.45, 3.05, 'wood wall');
@@ -1632,8 +1635,8 @@
     house.add(createBox(0xB0BEC5, 9, 0.12, 8, 0, 0.04, 0));
     house.add(createBox(0xFFF3E0, 7, 0.2, 5.5, 0, 0.15, 0));
     addRemovableWall(house, 0xFFF8E1, 7, 2.5, 0.18, 0, 1.4, -2.5, 'wall');
-    addRemovableWall(house, 0xFFF8E1, 2.7, 2.5, 0.18, -2.15, 1.4, 2.5, 'wall');
-    addRemovableWall(house, 0xFFF8E1, 2.7, 2.5, 0.18, 2.15, 1.4, 2.5, 'wall');
+    addRemovableWall(house, 0xFFF8E1, 2.45, 2.5, 0.18, -2.275, 1.4, 2.5, 'wall');
+    addRemovableWall(house, 0xFFF8E1, 2.45, 2.5, 0.18, 2.275, 1.4, 2.5, 'wall');
     addRemovableWall(house, 0xFFF8E1, 0.18, 2.5, 5, -3.4, 1.4, 0, 'wall');
     addRemovableWall(house, 0xFFF8E1, 0.18, 2.5, 5, 3.4, 1.4, 0, 'wall');
     [[-3.5, -2.5], [3.5, -2.5], [-3.5, 2.5], [3.5, 2.5]].forEach((p) => {
@@ -2747,6 +2750,14 @@
       updateHouseWalk();
       updateAnimals();
       updateParticles();
+      if (player && $('game-ui')) {
+        $('game-ui').dataset.x = player.position.x.toFixed(2);
+        $('game-ui').dataset.y = player.position.y.toFixed(2);
+        $('game-ui').dataset.z = player.position.z.toFixed(2);
+        $('game-ui').dataset.camy = camera.position.y.toFixed(2);
+        $('game-ui').dataset.inside = insideHouse ? insideHouse.name : '';
+        $('game-ui').dataset.houses = String(enterableHouses.length);
+      }
       renderer.render(scene, camera);
     }
   }
